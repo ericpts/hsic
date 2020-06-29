@@ -219,7 +219,7 @@ class ColourBiasedMNIST(BiasedMNIST):
         )
 
 
-def get_biased_mnist_dataloader(
+def biased_mnist(
     root,
     batch_size,
     data_label_correlation,
@@ -241,11 +241,21 @@ def get_biased_mnist_dataloader(
         data_label_correlation=data_label_correlation,
         n_confusing_labels=n_confusing_labels,
     )
-    dataloader = data.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    return dataloader
+
+    X = []
+    y = []
+    biased_y = []
+
+    n_points = 10_000
+
+    for img, target, biased_target in dataset:
+        x = np.moveaxis(img.numpy(), 0, 2)
+        X.append(x)
+        y.append(target)
+        biased_y.append(biased_target)
+
+        n_points -= 1
+        if n_points == 0:
+            break
+
+    return X, y, biased_y
