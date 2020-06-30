@@ -1,2 +1,0 @@
-diversity_loss.kernel = 'linear'
-compute_combined_loss.diversity_loss_coefficient = 0.166

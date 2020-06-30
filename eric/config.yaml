@@ -1,0 +1,2 @@
+gin_config_file: config.gin
+results_json_output: results.json

@@ -5,12 +5,14 @@ import tensorflow_probability as tfp
 import gin
 import gin.tf
 import argparse
+import yaml
 from datetime import datetime
 from pathlib import Path
+import json
+from typing import List, Tuple, Dict
 
 
-from typing import List, Tuple
-
+NAME = "TOY_QUADRANT_PROBLEM"
 
 # Hyperparameters
 batch_size = 64
@@ -90,22 +92,6 @@ def cka(
     return tf.reduce_mean(pair_losses)
 
 
-def cov_hsic(f, g):
-    n_samples = f.shape[0]
-    cov = 1 / (n_samples - 1) * (f.T @ g)
-    score = np.linalg.norm(cov)
-    return score ** 2.0
-
-
-def cov_cka(f, g):
-    up = cov_hsic(f, g)
-    down_f = cov_hsic(f, f)
-    down_g = cov_hsic(g, g)
-    s = up / np.sqrt(down_f * down_g)
-
-    return up / np.sqrt(down_f * down_g)
-
-
 @gin.configurable
 def diversity_loss(
     extracted_features: List[tf.Tensor], kernel: str = "linear",
@@ -124,12 +110,6 @@ def label_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     y_true = tf.reshape(tf.where(y_true > 0, x=1, y=0), (-1,))
     return tf.nn.sparse_softmax_cross_entropy_with_logits(y_true, y_pred)
     # return tf.reduce_mean(tf.keras.losses.MSE(y_true, y_pred))
-
-
-def cross_covariance(x: np.array, y: np.array) -> float:
-    cov = 1 / (x.shape[0] - 1) * np.linalg.norm(x.T @ y)
-    cov = cov ** 2
-    return cov
 
 
 def forward(X: tf.Tensor, y_true: tf.Tensor, ms: List[tf.keras.Model]) -> tf.Tensor:
@@ -214,8 +194,7 @@ def test_step(X: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     return compute_combined_loss(prediction_loss, div_loss)
 
 
-@gin.configurable
-def main_loop(epochs: int = 30):
+def train(epochs: int = 30):
     D_train = generate_training_data().shuffle(100_000).batch(batch_size)
     D_test = generate_testing_data(n_samples=10_000).batch(batch_size * 16)
 
@@ -226,7 +205,9 @@ def main_loop(epochs: int = 30):
     test_log_dir = base_log_dir / "test"
     test_summary_writer = tf.summary.create_file_writer(str(test_log_dir))
 
-    for epoch in range(30):
+    results_per_epoch = [None] * epochs
+
+    for epoch in range(epochs):
         for (X, y) in D_train.prefetch(8):
             train_loss = train_step(X, y)
             train_combined_loss(train_loss)
@@ -238,15 +219,6 @@ def main_loop(epochs: int = 30):
                 "diversity loss", train_diversity_loss.result(), step=epoch
             )
             tf.summary.scalar("combined loss", train_combined_loss.result(), step=epoch)
-
-            if False:
-                for im, m in enumerate(ms):
-                    vs = m.trainable_variables
-                    feature_extractor_weights = vs[0]
-                    print(f"weights for network {im}: {vs}")
-                    tf.summary.histogram(
-                        f"weights {im}", feature_extractor_weights, step=epoch
-                    )
 
         for (X, y) in D_test.prefetch(8):
             test_loss = test_step(X, y)
@@ -268,6 +240,24 @@ def main_loop(epochs: int = 30):
             {test_diversity_loss.result()};"
         )
 
+        results = {}
+        weights = {}
+        for im, m in enumerate(ms):
+            vs = m.trainable_variables
+            feature_extractor_weights = vs[0]
+            weights[im] = feature_extractor_weights.numpy().tolist()
+        results["weights"] = weights
+        results["train_diversity_loss"] = train_diversity_loss.result().numpy().tolist()
+        results["train_prediction_loss"] = [
+            t.result().numpy().tolist() for t in train_prediction_loss
+        ]
+
+        results["test_diversity_loss"] = test_diversity_loss.result().numpy().tolist()
+        results["test_prediction_loss"] = [
+            t.result().numpy().tolist() for t in test_prediction_loss
+        ]
+        results_per_epoch[epoch] = results
+
         for t in train_prediction_loss:
             t.reset_states()
         train_diversity_loss.reset_states()
@@ -278,16 +268,42 @@ def main_loop(epochs: int = 30):
         test_diversity_loss.reset_states()
         test_combined_loss.reset_states()
 
+    return results_per_epoch
 
-def main():
+
+def main(config: Dict):
+    assert "gin_config_file" in config
+    assert "results_json_output" in config
+
+    gin.parse_config_file(config["gin_config_file"])
+
+    results = {}
+    results["per_epoch"] = train()
+    results["config_file"] = args.yaml_config_file
+
+    results["name"] = NAME
+    results["diversity_loss_coefficient"] = gin.query_parameter(
+        "compute_combined_loss.diversity_loss_coefficient"
+    )
+
+    with open(config["results_json_output"], "w+t") as f:
+        print(results)
+        json.dump(results, f)
+
+
+def cli_main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gin_config_file", type=str)
+    parser.add_argument(
+        "--yaml_config_file",
+        type=str,
+        help="Yaml config file containing all parameters",
+        required=True,
+    )
     args = parser.parse_args()
-    if args.gin_config_file:
-        gin.parse_config_file(args.gin_config_file)
-
-    main_loop()
+    assert Path(args.yaml_config_file).exists
+    config = yaml.load(Path(args.yaml_config_file).read_text())
+    return main(config)
 
 
 if __name__ == "__main__":
-    main()
+    cli_main()
