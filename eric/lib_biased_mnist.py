@@ -9,12 +9,23 @@ https://github.com/clovaai/rebias/blob/master/datasets/colour_mnist.py
 import os
 import numpy as np
 from PIL import Image
-
 import torch
 from torch.utils import data
-
 from torchvision import transforms
 from torchvision.datasets import MNIST
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import tensorflow_probability as tfp
+import gin
+import gin.tf
+import argparse
+import yaml
+from datetime import datetime
+from pathlib import Path
+import json
+from typing import List, Tuple, Dict
+import lib_problem
 
 
 class BiasedMNIST(MNIST):
@@ -81,7 +92,7 @@ class BiasedMNIST(MNIST):
             target_transform=target_transform,
             download=download,
         )
-        self.random = True
+        self.random = False
 
         self.data_label_correlation = data_label_correlation
         self.n_confusing_labels = n_confusing_labels
@@ -104,6 +115,7 @@ class BiasedMNIST(MNIST):
 
     def _shuffle(self, iteratable):
         if self.random:
+            np.random.seed(0)
             np.random.shuffle(iteratable)
 
     def _make_biased_mnist(self, indices, label):
@@ -219,13 +231,8 @@ class ColourBiasedMNIST(BiasedMNIST):
         )
 
 
-def biased_mnist(
-    root,
-    batch_size,
-    data_label_correlation,
-    n_confusing_labels=9,
-    train=True,
-    num_workers=8,
+def make_biased_mnist_data(
+    root, data_label_correlation, n_confusing_labels=9, train=True
 ):
     transform = transforms.Compose(
         [
@@ -242,20 +249,44 @@ def biased_mnist(
         n_confusing_labels=n_confusing_labels,
     )
 
-    X = []
-    y = []
-    biased_y = []
+    def gen():
+        for img, target, biased_target in dataset:
+            x = np.moveaxis(img.numpy(), 0, 2)
+            yield x, target  # , biased_target
 
-    n_points = 10_000
+        return None
 
-    for img, target, biased_target in dataset:
-        x = np.moveaxis(img.numpy(), 0, 2)
-        X.append(x)
-        y.append(target)
-        biased_y.append(biased_target)
+    return gen
 
-        n_points -= 1
-        if n_points == 0:
-            break
 
-    return X, y, biased_y
+def make_base_model() -> tf.keras.Model:
+    inputs = tf.keras.layers.Input((28, 28, 3))
+    X = inputs
+    X = tf.keras.layers.Flatten()(X)
+    X = tf.keras.layers.Dense(10, activation="linear")(X)
+    feature_extractor = X
+    X = tf.keras.layers.Dense(10, activation="linear")(X)
+
+    return tf.keras.Model(inputs, outputs=[feature_extractor, X])
+
+
+class BiasedMnistProblem(lib_problem.Problem):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
+
+    def generate_training_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+        return (
+            tf.data.Dataset.from_generator(
+                make_biased_mnist_data("~/.datasets/mnist/", 1.0, train=True),
+                output_types=(tf.float32, tf.int64),
+            )
+            .cache()
+            .shuffle(60_000)
+        )
+
+    def generate_testing_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+        return tf.data.Dataset.from_generator(
+            make_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False),
+            output_types=(tf.float32, tf.int64),
+        ).cache()
+

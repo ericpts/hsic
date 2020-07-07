@@ -1,2 +1,4 @@
 gin_config_file: config.gin
-results_json_output: results.json
+results_json_output: /tmp/results.json
+epochs: 20
+problem: toy

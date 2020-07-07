@@ -1,2 +1,3 @@
-diversity_loss.kernel = 'linear'
-compute_combined_loss.diversity_loss_coefficient = 0.4
+diversity_loss.kernel = 'rbf'
+diversity_loss.independence_measure = 'cka'
+compute_combined_loss.diversity_loss_coefficient = 1
