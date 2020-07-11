@@ -38,9 +38,25 @@ def generate_configs(problem: str) -> List[Path]:
         root = Path(f"{problem}/{indep}")
         for k in kernels:
             for l in lambdas:
-                for r in range(runs):
+
+                r_0 = -1
+                already_ran = True
+                while already_ran:
+                    r_0 += 1
+                    already_ran = (
+                        root
+                        / f"{k}_kernel"
+                        / f"lambda_{l}"
+                        / f"run_{r_0}"
+                        / "results.json"
+                    ).exists()
+
+                for r in range(r_0, r_0 + runs):
                     d = root / f"{k}_kernel" / f"lambda_{l}" / f"run_{r}"
-                    os.makedirs(d, exist_ok=True)
+                    os.makedirs(d)
+
+                    assert not (d / "results.json").exists()
+
                     gin_config = d / "config.gin"
                     gin_config.write_text(
                         f"""
