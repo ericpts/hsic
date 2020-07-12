@@ -27,14 +27,14 @@ class ToyProblem(lib_problem.Problem):
         super().__init__("toy_quadrant_problem", make_base_model)
 
     def generate_training_data(
-        self, n_samples: int = 100_000, sigma_c: float = 1.0, sigma_s: float = 1.0
+        self, n_samples: int = 10_000, sigma_c: float = 0.4, sigma_s: float = 0.4
     ) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
         np.random.seed(0)
 
         y = np.random.choice([1, -1], size=(n_samples, 1))
 
-        c = np.random.normal(y, scale=sigma_c, size=(n_samples, 1))
-        s = np.random.normal(y, scale=sigma_s, size=(n_samples, 1))
+        c = np.random.normal(2 * y, scale=sigma_c, size=(n_samples, 1))
+        s = np.random.normal(2 * y, scale=sigma_s, size=(n_samples, 1))
 
         X = np.concatenate([c, s], axis=-1)
 
@@ -44,15 +44,15 @@ class ToyProblem(lib_problem.Problem):
         )
 
     def generate_testing_data(
-        self, n_samples: int = 10_000, sigma_c: float = 1.0, sigma_s: float = 1.0
+        self, n_samples: int = 10_000, sigma_c: float = 0.4, sigma_s: float = 0.4
     ) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
         np.random.seed(0)
 
         y = np.random.choice([1, -1], size=(n_samples, 1))
-        c = np.random.normal(y, scale=sigma_c, size=(n_samples, 1))
+        c = np.random.normal(2 * y, scale=sigma_c, size=(n_samples, 1))
 
         z = np.random.choice([1, -1], size=(n_samples, 1))
-        s = np.random.normal(z, scale=sigma_s, size=(n_samples, 1))
+        s = np.random.normal(2 * z, scale=sigma_s, size=(n_samples, 1))
 
         X = np.concatenate([c, s], axis=-1)
 
