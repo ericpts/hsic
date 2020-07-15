@@ -7,7 +7,7 @@ Courtesy of
 https://github.com/clovaai/rebias/blob/master/datasets/colour_mnist.py
 """
 import os
-import numpy as np
+import hashlib
 from PIL import Image
 import torch
 from torch.utils import data
@@ -115,7 +115,6 @@ class BiasedMNIST(MNIST):
 
     def _shuffle(self, iteratable):
         if self.random:
-            np.random.seed(0)
             np.random.shuffle(iteratable)
 
     def _make_biased_mnist(self, indices, label):
@@ -231,9 +230,7 @@ class ColourBiasedMNIST(BiasedMNIST):
         )
 
 
-def make_biased_mnist_data(
-    root, data_label_correlation, n_confusing_labels=9, train=True
-):
+def make_biased_mnist_data(root, data_label_correlation, train=True):
     transform = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -246,12 +243,13 @@ def make_biased_mnist_data(
         transform=transform,
         download=True,
         data_label_correlation=data_label_correlation,
-        n_confusing_labels=n_confusing_labels,
+        n_confusing_labels=9,
     )
 
     def gen():
         for img, target, biased_target in dataset:
-            x = np.moveaxis(img.numpy(), 0, 2)
+            x = img.numpy()
+            # x = np.moveaxis(x, 0, 2)
             yield x, target  # , biased_target
 
         return None
@@ -259,29 +257,98 @@ def make_biased_mnist_data(
     return gen
 
 
-def make_base_model() -> tf.keras.Model:
-    inputs = tf.keras.layers.Input((28, 28, 3))
+def eric_hash(s):
+    return hashlib.sha224(s).hexdigest()[:10]
+
+
+def make_base_mlp_model() -> tf.keras.Model:
+    def update_weights(fc, fan_in: int):
+        # PyTorch style initialization.
+        r = 1 / np.sqrt(fan_in)
+        w = fc.get_weights()
+        w[0] = np.random.uniform(-r, r, size=w[0].shape).astype(np.float32)
+        print(w[0].shape)
+        print(f"generated weights with hash {eric_hash(w[0].tostring())}")
+        fc.set_weights(w)
+
+    fc1 = tf.keras.layers.Dense(11, use_bias=False)
+    fc2 = tf.keras.layers.Dense(10, use_bias=False)
+
+    inputs = tf.keras.layers.Input((3, 28, 28))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(10, activation="linear")(X)
+    X = fc1(X)
     feature_extractor = X
-    X = tf.keras.layers.Dense(10, activation="linear")(X)
+    X = fc2(X)
+
+    update_weights(fc1, 28 * 28 * 3)
+    update_weights(fc2, 11)
 
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
+def make_base_cnn_model() -> tf.keras.Model:
+    inputs = tf.keras.layers.Input((28, 28, 3))
+    X = inputs
+    X = tf.keras.layers.Conv2D(3, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4))(
+        X
+    )
+    X = tf.keras.layers.ReLU()(X)
+
+    X = tf.keras.layers.Conv2D(6, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4))(
+        X
+    )
+    X = tf.keras.layers.ReLU()(X)
+
+    X = tf.keras.layers.Conv2D(
+        12, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4)
+    )(X)
+    X = tf.keras.layers.ReLU()(X)
+
+    X = tf.keras.layers.Flatten()(X)
+    X = tf.keras.layers.Dense(
+        10, kernel_regularizer=tf.keras.regularizers.L2(1e-4), activation="relu"
+    )(X)
+    feature_extractor = X
+    X = tf.keras.layers.Dense(
+        10, kernel_regularizer=tf.keras.regularizers.L2(1e-4), activation="linear"
+    )(X)
+
+    return tf.keras.Model(inputs, outputs=[feature_extractor, X])
+
+
+@gin.configurable
 class BiasedMnistProblem(lib_problem.Problem):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        training_data_label_correlation: float = 0.99,
+        base_model: str = "mlp",
+        *args,
+        **kwargs,
+    ) -> None:
+        make_base_model = None
+        if base_model == "cnn":
+            make_base_model = make_base_cnn_model
+        elif base_model == "mlp":
+            make_base_model = make_base_mlp_model
+        else:
+            raise ValueError(
+                f"Unrecognized base model: {base_model}; expected one of cnn, mlp"
+            )
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
+        self.training_data_label_correlation = training_data_label_correlation
 
     def generate_training_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
         return (
             tf.data.Dataset.from_generator(
-                make_biased_mnist_data("~/.datasets/mnist/", 1.0, train=True),
+                make_biased_mnist_data(
+                    "~/.datasets/mnist/",
+                    self.training_data_label_correlation,
+                    train=True,
+                ),
                 output_types=(tf.float32, tf.int64),
-            )
-            .cache()
-            .shuffle(60_000)
+            ).cache()
+            # .shuffle(60_000)
         )
 
     def generate_testing_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:

@@ -1,3 +1,5 @@
 diversity_loss.kernel = 'rbf'
-diversity_loss.independence_measure = 'cka'
+diversity_loss.independence_measure = 'hsic'
 compute_combined_loss.diversity_loss_coefficient = 1
+BiasedMnistProblem.training_data_label_correlation = 0.99
+BiasedMnistProblem.base_model = 'mlp'
