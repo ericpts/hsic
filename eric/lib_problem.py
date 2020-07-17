@@ -271,7 +271,9 @@ class Problem(object):
         np.random.seed(0)
         self.models = [make_base_model() for i in range(self.n_models)]
         # self.optimizer = tf.keras.optimizers.Adam(lr=0.001, epsilon=0.001)
-        self.optimizer = tf.keras.optimizers.SGD(lr=0.001)
+        self.optimizer = tf.keras.optimizers.Nadam(lr=0.001, epsilon=0.001)
+        # self.optimizer = tf.keras.optimizers.SGD(lr=0.001)
+
         self.variables = []
         for m in self.models:
             self.variables.extend(m.trainable_variables)

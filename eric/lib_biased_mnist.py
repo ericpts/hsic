@@ -92,7 +92,8 @@ class BiasedMNIST(MNIST):
             target_transform=target_transform,
             download=download,
         )
-        self.random = False
+        self.n_shuffles = 0
+        self.random = True
 
         self.data_label_correlation = data_label_correlation
         self.n_confusing_labels = n_confusing_labels
@@ -115,6 +116,8 @@ class BiasedMNIST(MNIST):
 
     def _shuffle(self, iteratable):
         if self.random:
+            np.random.seed(self.n_shuffles)
+            self.n_shuffles += 1
             np.random.shuffle(iteratable)
 
     def _make_biased_mnist(self, indices, label):
@@ -271,8 +274,8 @@ def make_base_mlp_model() -> tf.keras.Model:
         print(f"generated weights with hash {eric_hash(w[0].tostring())}")
         fc.set_weights(w)
 
-    fc1 = tf.keras.layers.Dense(11, use_bias=False)
-    fc2 = tf.keras.layers.Dense(10, use_bias=False)
+    fc1 = tf.keras.layers.Dense(11, use_bias=True)
+    fc2 = tf.keras.layers.Dense(10, use_bias=True)
 
     inputs = tf.keras.layers.Input((3, 28, 28))
     X = inputs
