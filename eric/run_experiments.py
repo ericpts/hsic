@@ -46,7 +46,7 @@ BiasedMnistProblem.base_model = '{model}'
             f"""
 gin_config_file: {str(gin_config)}
 results_json_output: {str(results_json)}
-epochs: 80
+epochs: 60
 problem: {problem}
 """
         )
@@ -56,14 +56,14 @@ problem: {problem}
 
 def generate_configs(problem: str) -> List[Path]:
     """ Returns a list of configs to run. """
-    l_corr = [0.99]
-    lambdas = [1 / 32, 1 / 16, 1 / 4, 1, 2, 4]
+    l_corr = [0.9, 0.99, 0.999]
+    lambdas = [0, 1 / 32, 1 / 16, 1 / 4, 1, 2, 4, 8]
     models = ["mlp"]  # , "cnn"]
     kernels = ["rbf"]
-    runs = 2
+    runs = 4
 
     ret = []
-    for indep in ["hsic"]:
+    for indep in ["hsic", "cka"]:
         for k in kernels:
             for l in lambdas:
                 for corr in l_corr:

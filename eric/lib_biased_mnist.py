@@ -7,7 +7,6 @@ Courtesy of
 https://github.com/clovaai/rebias/blob/master/datasets/colour_mnist.py
 """
 import os
-import hashlib
 from PIL import Image
 import torch
 from torch.utils import data
@@ -260,33 +259,13 @@ def make_biased_mnist_data(root, data_label_correlation, train=True):
     return gen
 
 
-def eric_hash(s):
-    return hashlib.sha224(s).hexdigest()[:10]
-
-
 def make_base_mlp_model() -> tf.keras.Model:
-    def update_weights(fc, fan_in: int):
-        # PyTorch style initialization.
-        r = 1 / np.sqrt(fan_in)
-        w = fc.get_weights()
-        w[0] = np.random.uniform(-r, r, size=w[0].shape).astype(np.float32)
-        print(w[0].shape)
-        print(f"generated weights with hash {eric_hash(w[0].tostring())}")
-        fc.set_weights(w)
-
-    fc1 = tf.keras.layers.Dense(11, use_bias=True)
-    fc2 = tf.keras.layers.Dense(10, use_bias=True)
-
     inputs = tf.keras.layers.Input((3, 28, 28))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
-    X = fc1(X)
+    X = tf.keras.layers.Dense(11)(X)
     feature_extractor = X
-    X = fc2(X)
-
-    update_weights(fc1, 28 * 28 * 3)
-    update_weights(fc2, 11)
-
+    X = tf.keras.layers.Dense(10)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
@@ -350,8 +329,9 @@ class BiasedMnistProblem(lib_problem.Problem):
                     train=True,
                 ),
                 output_types=(tf.float32, tf.int64),
-            ).cache()
-            # .shuffle(60_000)
+            )
+            .cache()
+            .shuffle(60_000)
         )
 
     def generate_testing_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:

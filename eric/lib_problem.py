@@ -11,14 +11,6 @@ from pathlib import Path
 import json
 from typing import List, Tuple, Dict, Callable
 import time
-import hashlib
-
-
-DEBUG = False
-
-
-def eric_hash(s):
-    return hashlib.sha224(s).hexdigest()[:10]
 
 
 def center_matrix(M):
@@ -26,32 +18,16 @@ def center_matrix(M):
     return M
 
 
-def manual_rbf(X):
-    XX = X @ tf.transpose(X)
-    X_sqnorms = tf.linalg.diag_part(XX)
-    X_L2 = -2 * XX + tf.expand_dims(X_sqnorms, 1) + tf.expand_dims(X_sqnorms, 0)
-    gamma = 1 / 2
-    kernel_XX = tf.exp(-gamma * X_L2)
-    return kernel_XX
-
-
-def rebias_hsic(xs: List[tf.Tensor]) -> tf.Tensor:
+def hsic(
+    xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
+) -> tf.Tensor:
     N = xs[0].shape[0]
     assert len(xs) == 2
 
-    K = manual_rbf(xs[0])
-    L = manual_rbf(xs[1])
-    KH = K - tf.reduce_mean(K, 0)
-    LH = L - tf.reduce_mean(L, 0)
-
-    score = tf.math.reduce_sum(tf.math.multiply(KH, tf.transpose(LH)))
-    score /= (N - 1) ** 2
-    return score
-
-    # centered_gram_matrices = [center_matrix(k.matrix(f, f)) for f in xs]
-    # return tf.linalg.trace(centered_gram_matrices[0] @ centered_gram_matrices[1]) / (
-    #     (n_samples - 1) ** 2
-    # )
+    centered_gram_matrices = [center_matrix(k.matrix(f, f)) for f in xs]
+    return tf.linalg.trace(centered_gram_matrices[0] @ centered_gram_matrices[1]) / (
+        (N - 1) ** 2
+    )
 
 
 def unbiased_hsic(
@@ -144,10 +120,6 @@ def conditional_hsic(
             pair_losses.append(tf.linalg.trace(X @ Y))
     ret = tf.reduce_mean(pair_losses) / n
 
-    if DEBUG:
-        ret_manual = manual_chsic(xs[0], xs[1], labels, lambda x, y: k.apply(x, y))
-        assert abs(ret - ret_manual) < 0.0001, f"Expected {ret} to equal {ret_manual}"
-
     return ret
 
 
@@ -199,8 +171,6 @@ def manual_chsic(c, s, y, k):
 def diversity_loss(
     features: List[tf.Tensor], y: tf.Tensor, independence_measure: str, kernel: str,
 ) -> tf.Tensor:
-    return rebias_hsic(features)
-
     if kernel == "linear":
         k = tfp.math.psd_kernels.Linear()
     elif kernel == "rbf":
@@ -209,13 +179,13 @@ def diversity_loss(
         raise ValueError(f"Unknown kernel: {kernel}; should be one of linear, rbf")
 
     if independence_measure == "cka":
-        return cka(extracted_features, k)
+        return cka(features, k)
     elif independence_measure == "hsic":
-        return hsic(extracted_features, k)
+        return hsic(features, k)
     elif independence_measure == "unbiased_hsic":
-        return unbiased_hsic(extracted_features, k)
+        return unbiased_hsic(features, k)
     elif independence_measure == "conditional_hsic":
-        return conditional_hsic(extracted_features, y, k)
+        return conditional_hsic(features, y, k)
     else:
         raise ValueError(
             f"Unknown independence_measure: {independence_measure}; expected one of cka or hsic"
@@ -268,11 +238,8 @@ class Problem(object):
         self.batch_size = batch_size
         self.n_models = n_models
 
-        np.random.seed(0)
         self.models = [make_base_model() for i in range(self.n_models)]
-        # self.optimizer = tf.keras.optimizers.Adam(lr=0.001, epsilon=0.001)
         self.optimizer = tf.keras.optimizers.Nadam(lr=0.001, epsilon=0.001)
-        # self.optimizer = tf.keras.optimizers.SGD(lr=0.001)
 
         self.variables = []
         for m in self.models:
