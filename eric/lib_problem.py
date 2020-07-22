@@ -239,7 +239,9 @@ class Problem(object):
         self.n_models = n_models
 
         self.models = [make_base_model() for i in range(self.n_models)]
-        self.optimizer = tf.keras.optimizers.Nadam(lr=0.001, epsilon=0.001)
+        self.lr = tf.Variable(0.1)
+        self.optimizer = tf.keras.optimizers.Nadam(lr=self.lr, epsilon=0.001)
+        self.decrease_lr_at_epochs = [20, 40, 80]
 
         self.variables = []
         for m in self.models:
@@ -333,12 +335,29 @@ class Problem(object):
     def generate_testing_data(self):
         raise NotImplemented("Must implement method in derived class!")
 
+    def on_epoch_end(self, epoch: int):
+        print(f"Epoch: {epoch + 1}")
+
+        for ms in self.metrics:
+            res = [m.result().numpy() for m in ms]
+            metric_name = ms[0].name
+            if len(res) == 1:
+                res = res[0]
+            print(f"\t{metric_name}: {res}")
+        print("=" * 100)
+
+        if (
+            len(self.decrease_lr_at_epochs) > 0
+            and epoch == self.decrease_lr_at_epochs[0]
+        ):
+            self.lr.assign(self.lr.value() / 10.0)
+            self.decrease_lr_at_epochs.pop(0)
+
     def train(self, epochs: int):
         D_train = self.generate_training_data()
         D_test = self.generate_testing_data()
 
         for epoch in range(epochs):
-            t0 = time.time()
             self.reset_metrics()
 
             for (X, y) in D_test.batch(self.batch_size).prefetch(16):
@@ -349,16 +368,7 @@ class Problem(object):
                 train_loss = self.train_step(X, y)
                 self.train_combined_loss(train_loss)
 
-            print(f"Epoch: {epoch + 1}")
-
-            for ms in self.metrics:
-                res = [m.result().numpy() for m in ms]
-                metric_name = ms[0].name
-                if len(res) == 1:
-                    res = res[0]
-                print(f"\t{metric_name}: {res}")
-            print(f"\tTime per epoch: {time.time() - t0}")
-            print("=" * 100)
+            self.on_epoch_end(epoch)
 
         results = {}
         weights = {}
@@ -377,7 +387,4 @@ class Problem(object):
             results[metric_name] = res
 
         results["name"] = self.name
-        results["diversity_loss_coefficient"] = gin.query_parameter(
-            "compute_combined_loss.diversity_loss_coefficient"
-        )
         return results

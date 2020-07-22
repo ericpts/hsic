@@ -46,7 +46,7 @@ BiasedMnistProblem.base_model = '{model}'
             f"""
 gin_config_file: {str(gin_config)}
 results_json_output: {str(results_json)}
-epochs: 60
+epochs: 100
 problem: biased_mnist
 """
         )
@@ -56,14 +56,32 @@ problem: biased_mnist
 
 def generate_biased_mnist_configs() -> List[Path]:
     """ Returns a list of configs to run. """
-    l_corr = [0.9, 0.99, 0.999]
-    lambdas = [0, 1 / 32, 1 / 16, 1 / 4, 1, 2, 4, 8]
+    l_corr = [0.999, 0.997, 0.995, 0.9]
+    lambdas = [
+        0,
+        1 / 32,
+        1 / 16,
+        1 / 8,
+        1 / 4,
+        1 / 2,
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+    ]
     models = ["mlp"]  # , "cnn"]
-    kernels = ["rbf", "linear"]
+    kernels = ["rbf"]
     runs = 4
 
     ret = []
-    for indep in ["hsic", "cka", "unbiased_hsic", "conditional_hsic"]:
+    for indep in ["conditional_hsic", "unbiased_hsic"]:
         for k in kernels:
             for l in lambdas:
                 for corr in l_corr:
@@ -128,7 +146,7 @@ def main():
     parser.add_argument(
         "--problem", type=str, choices=["toy", "biased_mnist"], required=True
     )
-    parser.add_argument("--n_processes", type=int, default=32)
+    parser.add_argument("--n_processes", type=int, default=16)
     args = parser.parse_args()
     if args.problem == "toy":
         configs = generate_toy_configs()

@@ -251,7 +251,7 @@ def make_biased_mnist_data(root, data_label_correlation, train=True):
     def gen():
         for img, target, biased_target in dataset:
             x = img.numpy()
-            # x = np.moveaxis(x, 0, 2)
+            x = np.moveaxis(x, 0, 2)
             yield x, target  # , biased_target
 
         return None
@@ -260,10 +260,10 @@ def make_biased_mnist_data(root, data_label_correlation, train=True):
 
 
 def make_base_mlp_model() -> tf.keras.Model:
-    inputs = tf.keras.layers.Input((3, 28, 28))
+    inputs = tf.keras.layers.Input((28, 28, 3))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(11)(X)
+    X = tf.keras.layers.Dense(20)(X)
     feature_extractor = X
     X = tf.keras.layers.Dense(10)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])

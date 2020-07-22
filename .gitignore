@@ -4,3 +4,4 @@ lsf/
 ensemble_results/
 !.gitignore
 logs/
+data/
