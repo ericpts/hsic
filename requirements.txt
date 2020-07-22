@@ -1,3 +1,2 @@
-tfp-nightly
 pyyaml
 gin-config
