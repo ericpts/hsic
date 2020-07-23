@@ -222,12 +222,14 @@ def get_biased_mnist_data(
 
 
 def make_base_mlp_model() -> tf.keras.Model:
+    l2_reg = tf.keras.regularizers.l2(0.1)
+
     inputs = tf.keras.layers.Input((28, 28, 3))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(20)(X)
+    X = tf.keras.layers.Dense(20, kernel_regularizer=l2_reg)(X)
     feature_extractor = X
-    X = tf.keras.layers.Dense(10)(X)
+    X = tf.keras.layers.Dense(10, kernel_regularizer=l2_reg)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
