@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import List
 from tqdm import tqdm
+import lib_biased_mnist
 
 
 def make_biased_mnist_runs(
@@ -151,6 +152,7 @@ def main():
     if args.problem == "toy":
         configs = generate_toy_configs()
     elif args.problem == "biased_mnist":
+        lib_biased_mnist.prepare_all_data()
         configs = generate_biased_mnist_configs()
     else:
         raise ValueError(f"Unrecognized problem: {problem}")

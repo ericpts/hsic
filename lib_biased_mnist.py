@@ -27,8 +27,8 @@ from typing import List, Tuple, Dict
 import lib_problem
 
 
-class BiasedMNIST(MNIST):
-    """A base class for Biased-MNIST.
+class ColourBiasedMNIST(MNIST):
+    """
     We manually select ten colours to synthetic colour bias. (See `COLOUR_MAP` for the colour configuration)
     Usage is exactly same as torchvision MNIST dataset class.
 
@@ -78,32 +78,29 @@ class BiasedMNIST(MNIST):
         self,
         root,
         train=True,
-        transform=None,
-        target_transform=None,
         download=False,
         data_label_correlation=1.0,
         n_confusing_labels=9,
     ):
         super().__init__(
-            root,
-            train=train,
-            transform=transform,
-            target_transform=target_transform,
-            download=download,
+            root, train=train, download=download,
         )
         self.n_shuffles = 0
         self.random = True
 
         self.data_label_correlation = data_label_correlation
         self.n_confusing_labels = n_confusing_labels
-        self.data, self.targets, self.biased_targets = self.build_biased_mnist()
+        data, targets, biased_targets = self.build_biased_mnist()
 
         indices = np.arange(len(self.data))
         self._shuffle(indices)
 
-        self.data = self.data[indices].numpy()
-        self.targets = self.targets[indices]
-        self.biased_targets = self.biased_targets[indices]
+        self.data = data[indices].numpy().astype(np.float32)
+        self.targets = targets[indices]
+        self.biased_targets = biased_targets[indices]
+
+        self.data /= 255.0
+        self.data = (self.data - 0.5) / 0.5
 
     @property
     def raw_folder(self):
@@ -119,8 +116,26 @@ class BiasedMNIST(MNIST):
             self.n_shuffles += 1
             np.random.shuffle(iteratable)
 
+    def _binary_to_colour(self, data, colour):
+        fg_data = torch.zeros_like(data)
+        fg_data[data != 0] = 255
+        fg_data[data == 0] = 0
+        fg_data = torch.stack([fg_data, fg_data, fg_data], dim=-1)
+
+        bg_data = torch.zeros_like(data)
+        bg_data[data == 0] = 1
+        bg_data[data != 0] = 0
+        bg_data = torch.stack([bg_data, bg_data, bg_data], dim=3)
+        bg_data = bg_data * torch.ByteTensor(colour)
+
+        data = fg_data + bg_data
+        return data
+
     def _make_biased_mnist(self, indices, label):
-        raise NotImplementedError
+        return (
+            self._binary_to_colour(self.data[indices], self.COLOUR_MAP[label]),
+            self.targets[indices],
+        )
 
     def _update_bias_indices(self, bias_indices, label):
         if self.n_confusing_labels > 9 or self.n_confusing_labels < 1:
@@ -177,86 +192,33 @@ class BiasedMNIST(MNIST):
 
     def __getitem__(self, index):
         img, target = self.data[index], int(self.targets[index])
-        img = Image.fromarray(img.astype(np.uint8), mode="RGB")
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
         return img, target, int(self.biased_targets[index])
 
 
-class ColourBiasedMNIST(BiasedMNIST):
-    def __init__(
-        self,
-        root,
-        train=True,
-        transform=None,
-        target_transform=None,
-        download=False,
-        data_label_correlation=1.0,
-        n_confusing_labels=9,
-    ):
-        super(ColourBiasedMNIST, self).__init__(
+def get_biased_mnist_data(
+    root: Path, data_label_correlation: float, train: bool = True
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    train_ext = "train" if train else "test"
+    fname = Path(root).expanduser() / f"data_{data_label_correlation}_{train_ext}.npz"
+
+    if not fname.exists():
+        dataset = ColourBiasedMNIST(
             root,
             train=train,
-            transform=transform,
-            target_transform=target_transform,
-            download=download,
+            download=True,
             data_label_correlation=data_label_correlation,
-            n_confusing_labels=n_confusing_labels,
+            n_confusing_labels=9,
         )
-
-    def _binary_to_colour(self, data, colour):
-        fg_data = torch.zeros_like(data)
-        fg_data[data != 0] = 255
-        fg_data[data == 0] = 0
-        fg_data = torch.stack([fg_data, fg_data, fg_data], dim=1)
-
-        bg_data = torch.zeros_like(data)
-        bg_data[data == 0] = 1
-        bg_data[data != 0] = 0
-        bg_data = torch.stack([bg_data, bg_data, bg_data], dim=3)
-        bg_data = bg_data * torch.ByteTensor(colour)
-        bg_data = bg_data.permute(0, 3, 1, 2)
-
-        data = fg_data + bg_data
-        return data.permute(0, 2, 3, 1)
-
-    def _make_biased_mnist(self, indices, label):
-        return (
-            self._binary_to_colour(self.data[indices], self.COLOUR_MAP[label]),
-            self.targets[indices],
+        img, labels, biased_labels = (
+            dataset.data,
+            dataset.targets,
+            dataset.biased_targets,
         )
+        np.savez(fname, img=img, labels=labels, biased_labels=biased_labels)
+        return img, labels  # , biased_labels
 
-
-def make_biased_mnist_data(root, data_label_correlation, train=True):
-    transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
-        ]
-    )
-    dataset = ColourBiasedMNIST(
-        root,
-        train=train,
-        transform=transform,
-        download=True,
-        data_label_correlation=data_label_correlation,
-        n_confusing_labels=9,
-    )
-
-    def gen():
-        for img, target, biased_target in dataset:
-            x = img.numpy()
-            x = np.moveaxis(x, 0, 2)
-            yield x, target  # , biased_target
-
-        return None
-
-    return gen
+    npz = np.load(fname)
+    return (npz["img"], npz["labels"])  # , npz["biased_labels"])
 
 
 def make_base_mlp_model() -> tf.keras.Model:
@@ -320,23 +282,27 @@ class BiasedMnistProblem(lib_problem.Problem):
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
         self.training_data_label_correlation = training_data_label_correlation
 
-    def generate_training_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+    def generate_training_data(self) -> tf.data.Dataset:
         return (
-            tf.data.Dataset.from_generator(
-                make_biased_mnist_data(
+            tf.data.Dataset.from_tensor_slices(
+                get_biased_mnist_data(
                     "~/.datasets/mnist/",
                     self.training_data_label_correlation,
                     train=True,
-                ),
-                output_types=(tf.float32, tf.int64),
+                )
             )
             .cache()
             .shuffle(60_000)
         )
 
-    def generate_testing_data(self) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
-        return tf.data.Dataset.from_generator(
-            make_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False),
-            output_types=(tf.float32, tf.int64),
+    def generate_testing_data(self) -> tf.data.Dataset:
+        return tf.data.Dataset.from_tensor_slices(
+            get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False)
         ).cache()
+
+
+def prepare_all_data():
+    p = BiasedMnistProblem()
+    p.generate_testing_data()
+    p.generate_training_data()
 

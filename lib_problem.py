@@ -335,6 +335,10 @@ class Problem(object):
     def generate_testing_data(self):
         raise NotImplemented("Must implement method in derived class!")
 
+    def on_epoch_start(self, epoch: int):
+        self.reset_metrics()
+        self.epoch_start_time = time.time()
+
     def on_epoch_end(self, epoch: int):
         print(f"Epoch: {epoch + 1}")
 
@@ -344,6 +348,7 @@ class Problem(object):
             if len(res) == 1:
                 res = res[0]
             print(f"\t{metric_name}: {res}")
+        print(f"Took {time.time() - self.epoch_start_time} seconds.")
         print("=" * 100)
 
         if (
@@ -358,13 +363,13 @@ class Problem(object):
         D_test = self.generate_testing_data()
 
         for epoch in range(epochs):
-            self.reset_metrics()
+            self.on_epoch_start(epoch)
 
-            for (X, y) in D_test.batch(self.batch_size).prefetch(16):
+            for (X, y) in D_test.batch(self.batch_size).prefetch(4):
                 test_loss = self.test_step(X, y)
                 self.test_combined_loss(test_loss)
 
-            for (X, y) in D_train.batch(self.batch_size).prefetch(16):
+            for (X, y) in D_train.batch(self.batch_size).prefetch(4):
                 train_loss = self.train_step(X, y)
                 self.train_combined_loss(train_loss)
 
