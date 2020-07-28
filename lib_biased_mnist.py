@@ -62,17 +62,34 @@ class ColourBiasedMNIST(MNIST):
     """
 
     COLOUR_MAP = [
+        # 0
         [255, 0, 0],
         [0, 255, 0],
         [0, 0, 255],
         [225, 225, 0],
         [225, 0, 225],
+        # 5
         [0, 255, 255],
         [255, 128, 0],
         [255, 0, 128],
         [128, 0, 255],
         [128, 128, 128],
     ]
+
+    # COLOUR_MAP = [
+    #     # 0
+    #     [64, 64, 64],
+    #     [200, 200, 200],
+    #     [0, 0, 255],
+    #     [225, 225, 0],
+    #     [225, 0, 225],
+    #     # 5
+    #     [0, 255, 255],
+    #     [255, 128, 0],
+    #     [255, 0, 128],
+    #     [128, 0, 255],
+    #     [255, 0, 0],
+    # ]
 
     def __init__(
         self,
@@ -96,11 +113,10 @@ class ColourBiasedMNIST(MNIST):
         self._shuffle(indices)
 
         self.data = data[indices].numpy().astype(np.float32)
-        self.targets = targets[indices]
-        self.biased_targets = biased_targets[indices]
+        self.targets = targets[indices].numpy().astype(np.int32)
+        self.biased_targets = biased_targets[indices].numpy().astype(np.int32)
 
         self.data /= 255.0
-        self.data = (self.data - 0.5) / 0.5
 
     @property
     def raw_folder(self):
@@ -196,18 +212,24 @@ class ColourBiasedMNIST(MNIST):
 
 
 def get_biased_mnist_data(
-    root: Path, data_label_correlation: float, train: bool = True
+    root: Path,
+    data_label_correlation: float,
+    train: bool = True,
+    n_confusing_labels: int = 9,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     train_ext = "train" if train else "test"
-    fname = Path(root).expanduser() / f"data_{data_label_correlation}_{train_ext}.npz"
+    fname = (
+        Path(root).expanduser()
+        / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}.npz"
+    )
 
-    if not fname.exists():
+    if True or not fname.exists():
         dataset = ColourBiasedMNIST(
             root,
             train=train,
             download=True,
             data_label_correlation=data_label_correlation,
-            n_confusing_labels=9,
+            n_confusing_labels=n_confusing_labels,
         )
         img, labels, biased_labels = (
             dataset.data,
@@ -215,51 +237,34 @@ def get_biased_mnist_data(
             dataset.biased_targets,
         )
         np.savez(fname, img=img, labels=labels, biased_labels=biased_labels)
-        return img, labels  # , biased_labels
 
     npz = np.load(fname)
-    return (npz["img"], npz["labels"])  # , npz["biased_labels"])
+    return (npz["img"], npz["labels"], npz["biased_labels"])
 
 
-def make_base_mlp_model() -> tf.keras.Model:
-    l2_reg = tf.keras.regularizers.l2(0.1)
-
+def make_base_cnn_model(n_classes: int) -> tf.keras.Model:
     inputs = tf.keras.layers.Input((28, 28, 3))
+
     X = inputs
+    X = tf.keras.layers.Conv2D(8, kernel_size=3)(X)
+    X = tf.keras.layers.ReLU()(X)
+    X = tf.keras.layers.BatchNormalization()(X)
+
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(20, kernel_regularizer=l2_reg)(X)
+    X = tf.keras.layers.Dense(n_classes * 2)(X)
     feature_extractor = X
-    X = tf.keras.layers.Dense(10, kernel_regularizer=l2_reg)(X)
+
+    X = tf.keras.layers.Dense(n_classes)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
-def make_base_cnn_model() -> tf.keras.Model:
+def make_base_mlp_model(n_classes: int) -> tf.keras.Model:
     inputs = tf.keras.layers.Input((28, 28, 3))
     X = inputs
-    X = tf.keras.layers.Conv2D(3, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4))(
-        X
-    )
-    X = tf.keras.layers.ReLU()(X)
-
-    X = tf.keras.layers.Conv2D(6, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4))(
-        X
-    )
-    X = tf.keras.layers.ReLU()(X)
-
-    X = tf.keras.layers.Conv2D(
-        12, 5, kernel_regularizer=tf.keras.regularizers.L2(1e-4)
-    )(X)
-    X = tf.keras.layers.ReLU()(X)
-
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(
-        10, kernel_regularizer=tf.keras.regularizers.L2(1e-4), activation="relu"
-    )(X)
+    X = tf.keras.layers.Dense(n_classes * 2)(X)
     feature_extractor = X
-    X = tf.keras.layers.Dense(
-        10, kernel_regularizer=tf.keras.regularizers.L2(1e-4), activation="linear"
-    )(X)
-
+    X = tf.keras.layers.Dense(n_classes)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
@@ -268,38 +273,58 @@ class BiasedMnistProblem(lib_problem.Problem):
     def __init__(
         self,
         training_data_label_correlation: float = 0.99,
-        base_model: str = "mlp",
+        filter_for_digits: List[int] = list(range(10)),
         *args,
         **kwargs,
     ) -> None:
-        make_base_model = None
-        if base_model == "cnn":
-            make_base_model = make_base_cnn_model
-        elif base_model == "mlp":
-            make_base_model = make_base_mlp_model
-        else:
-            raise ValueError(
-                f"Unrecognized base model: {base_model}; expected one of cnn, mlp"
-            )
+        make_base_model = lambda: make_base_mlp_model(len(filter_for_digits))
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
         self.training_data_label_correlation = training_data_label_correlation
+        self.filter_for_digits = tf.convert_to_tensor(filter_for_digits)
 
-    def generate_training_data(self) -> tf.data.Dataset:
+    def filter_tensors(
+        self, X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor
+    ) -> Tuple[tf.Tensor, tf.Tensor]:
+        assert X.shape[0] == y.shape[0]
+        assert X.shape[0] == y_biased.shape[0]
+        matches_any = [tf.math.equal(y, d) for d in self.filter_for_digits]
+        select = tf.math.reduce_any(matches_any, axis=0)
+        return X[select], y[select], y_biased[select]
+
+    def generate_training_data(self, include_bias: bool = False) -> tf.data.Dataset:
+        if include_bias:
+            to_select = 3
+        else:
+            to_select = 2
         return (
             tf.data.Dataset.from_tensor_slices(
-                get_biased_mnist_data(
-                    "~/.datasets/mnist/",
-                    self.training_data_label_correlation,
-                    train=True,
-                )
+                self.filter_tensors(
+                    *get_biased_mnist_data(
+                        "~/.datasets/mnist/",
+                        self.training_data_label_correlation,
+                        train=True,
+                        # n_confusing_labels=len(self.filter_for_digits),
+                    )
+                )[:to_select]
             )
             .cache()
             .shuffle(60_000)
         )
 
-    def generate_testing_data(self) -> tf.data.Dataset:
+    def generate_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
+        if include_bias:
+            to_select = 3
+        else:
+            to_select = 2
         return tf.data.Dataset.from_tensor_slices(
-            get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False)
+            self.filter_tensors(
+                *get_biased_mnist_data(
+                    "~/.datasets/mnist/",
+                    0.0,
+                    train=False,
+                    # n_confusing_labels=len(self.filter_for_digits),
+                ),
+            )[:to_select]
         ).cache()
 
 

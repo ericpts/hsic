@@ -1,4 +1,4 @@
 gin_config_file: config.gin
-results_json_output: /tmp/results.json
+results_json_output: results.json
 epochs: 100
 problem: biased_mnist

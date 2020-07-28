@@ -12,7 +12,7 @@ from collections import defaultdict
 import yaml
 import json
 import gin
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 import shutil
 
 _gin_columns_rename = {
@@ -23,27 +23,26 @@ _gin_columns_rename = {
 
 
 def _parse_gin_config(config: str) -> Dict[str, Any]:
-    tokens = config.split()
-    n = len(tokens)
-    assert n % 3 == 0
-    i = 0
+    lines = config.split("\n")
     ret = {}
-    while i < n:
-        key = tokens[i]
-        assert tokens[i + 1] == "="
-        value = eval(tokens[i + 2])
-        ret[key] = value
-        i += 3
+    for line in lines:
+        tokens = [t.strip() for t in line.split("=")]
+        tokens = [t for t in tokens if t]
+        if len(tokens) == 0:
+            continue
+        assert len(tokens) == 2, f"Got unexpected line: {tokens}"
+        key, value = tokens
+        ret[key] = eval(value)
     return ret
 
 
-def _read_problem_raw_data(problem: str) -> pd.DataFrame:
+def _read_problem_raw_data(root: Path, problem: str) -> pd.DataFrame:
     rows = []
-    for yaml_config in Path(problem).glob("**/config.yaml"):
+    for yaml_config in (root / problem).glob("**/config.yaml"):
         with open(yaml_config, "rt") as f:
             cfg_dict = yaml.load(f, Loader=yaml.CLoader)
 
-        results_json = Path(cfg_dict["results_json_output"])
+        results_json = root / cfg_dict["results_json_output"]
         if not results_json.exists():
             print(f"Could not find {results_json}! Skipping folder...")
             continue
@@ -51,12 +50,9 @@ def _read_problem_raw_data(problem: str) -> pd.DataFrame:
         with results_json.open("rt") as f:
             results_dict = json.load(f)
 
-        gin_config = _parse_gin_config(Path(cfg_dict["gin_config_file"]).read_text())
+        gin_config = _parse_gin_config((root / cfg_dict["gin_config_file"]).read_text())
         row = {**results_dict, **gin_config}
         row["original_config"] = yaml_config
-
-        if "diversity_loss_coefficient":
-            del row["diversity_loss_coefficient"]
 
         rows.append(row)
     df = pd.DataFrame(rows)
@@ -91,8 +87,9 @@ def _process_weights_for_cos_and_norm(weights: pd.Series):
     return ret
 
 
-def read_problem(problem: str) -> pd.DataFrame:
-    DF = _read_problem_raw_data("toy")
+def read_problem(root: Path, problem: str) -> pd.DataFrame:
+    DF = _read_problem_raw_data(root, problem)
     DF["weights"] = DF["weights"].apply(_weights_to_numpy)
     DF[["cos", "norm"]] = DF["weights"].apply(_process_weights_for_cos_and_norm)
     return DF
+

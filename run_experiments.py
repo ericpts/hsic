@@ -57,7 +57,7 @@ problem: biased_mnist
 
 def generate_biased_mnist_configs() -> List[Path]:
     """ Returns a list of configs to run. """
-    l_corr = [0.999, 0.997, 0.995, 0.9]
+    l_corr = [0.999, 0.997, 0.995, 0.9, 0.99]
     lambdas = [
         0,
         1 / 32,

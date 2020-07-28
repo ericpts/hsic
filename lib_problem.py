@@ -220,10 +220,7 @@ def forward(X: tf.Tensor, y_true: tf.Tensor, models: List[tf.keras.Model]) -> tf
 def compute_combined_loss(
     prediction_loss: tf.Tensor, div_loss: tf.Tensor, diversity_loss_coefficient: float,
 ) -> tf.Tensor:
-    loss = 0
-    loss += diversity_loss_coefficient * div_loss
-    loss += tf.reduce_sum(prediction_loss)
-    return loss
+    return diversity_loss_coefficient * div_loss + tf.reduce_sum(prediction_loss)
 
 
 class Problem(object):
@@ -239,7 +236,7 @@ class Problem(object):
         self.n_models = n_models
 
         self.models = [make_base_model() for i in range(self.n_models)]
-        self.lr = tf.Variable(0.1)
+        self.lr = tf.Variable(0.01)
         self.optimizer = tf.keras.optimizers.Nadam(lr=self.lr, epsilon=0.001)
         self.decrease_lr_at_epochs = [20, 40, 80]
 

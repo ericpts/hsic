@@ -14,7 +14,7 @@ import lib_toy
 import lib_biased_mnist
 
 
-def main(config: Dict):
+def main(config: Dict, gin_overrides: List[str]):
     assert "gin_config_file" in config
     assert "results_json_output" in config
     assert "problem" in config
@@ -23,7 +23,7 @@ def main(config: Dict):
         "biased_mnist",
     ], f'Expected problem to be one of toy or biased_mnist; found {config["problem"]}'
 
-    gin.parse_config_file(config["gin_config_file"])
+    gin.parse_config_files_and_bindings([config["gin_config_file"]], gin_overrides)
 
     if "epochs" in config:
         epochs = config["epochs"]
@@ -50,10 +50,13 @@ def cli_main():
         help="Yaml config file containing all parameters",
         required=True,
     )
+    parser.add_argument(
+        "--gin_override", type=str, help="Override gin parameters", nargs="*"
+    )
     args = parser.parse_args()
     assert Path(args.yaml_config_file).exists
     config = yaml.load(Path(args.yaml_config_file).read_text(), Loader=yaml.FullLoader)
-    return main(config)
+    return main(config, args.gin_override)
 
 
 if __name__ == "__main__":
