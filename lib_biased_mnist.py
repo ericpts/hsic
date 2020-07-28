@@ -223,7 +223,7 @@ def get_biased_mnist_data(
         / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}.npz"
     )
 
-    if True or not fname.exists():
+    if not fname.exists():
         dataset = ColourBiasedMNIST(
             root,
             train=train,

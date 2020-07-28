@@ -37,7 +37,7 @@ diversity_loss.independence_measure = '{indep}'
 diversity_loss.kernel = '{k}'
 compute_combined_loss.diversity_loss_coefficient = {l}
 BiasedMnistProblem.training_data_label_correlation = {corr}
-BiasedMnistProblem.base_model = '{model}'
+BiasedMnistProblem.filter_for_digits = [0, 1]
     """
         )
 
@@ -57,29 +57,17 @@ problem: biased_mnist
 
 def generate_biased_mnist_configs() -> List[Path]:
     """ Returns a list of configs to run. """
-    l_corr = [0.999, 0.997, 0.995, 0.9, 0.99]
+    l_corr = [0.999, 0.997, 0.995, 0.99]
     lambdas = [
         0,
-        1 / 32,
-        1 / 16,
-        1 / 8,
-        1 / 4,
-        1 / 2,
         1,
-        2,
         4,
-        8,
-        16,
-        32,
         64,
         128,
-        256,
-        512,
-        1024,
     ]
     models = ["mlp"]  # , "cnn"]
     kernels = ["rbf"]
-    runs = 4
+    runs = 1
 
     ret = []
     for indep in ["conditional_hsic", "unbiased_hsic"]:
@@ -91,71 +79,12 @@ def generate_biased_mnist_configs() -> List[Path]:
     return ret
 
 
-def make_toy_runs(indep: str, k: str, l: float, runs: int,) -> List[Path]:
-    root = Path(f"toy/{indep}/{k}_kernel/lambda_{l}")
-    ret = []
-    r_0 = -1
-    already_ran = True
-    while already_ran:
-        r_0 += 1
-        already_ran = (root / f"run_{r_0}" / "results.json").exists()
-
-    for r in range(r_0, runs):
-        d = root / f"run_{r}"
-        os.makedirs(d, exist_ok=True)
-
-        assert not (d / "results.json").exists()
-
-        gin_config = d / "config.gin"
-        gin_config.write_text(
-            f"""
-diversity_loss.independence_measure = '{indep}'
-diversity_loss.kernel = '{k}'
-compute_combined_loss.diversity_loss_coefficient = {l}
-    """
-        )
-
-        results_json = d / "results.json"
-        yaml_config = d / "config.yaml"
-        yaml_config.write_text(
-            f"""
-gin_config_file: {str(gin_config)}
-results_json_output: {str(results_json)}
-epochs: 60
-problem: toy
-"""
-        )
-        ret.append(yaml_config)
-    return ret
-
-
-def generate_toy_configs() -> List[Path]:
-    lambdas = [16, 32, 64, 128]
-    kernels = ["rbf", "linear"]
-    runs = 4
-
-    ret = []
-    for indep in ["hsic", "cka", "unbiased_hsic", "conditional_hsic"]:
-        for k in kernels:
-            for l in lambdas:
-                ret.extend(make_toy_runs(indep, k, l, runs))
-    return ret
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--problem", type=str, choices=["toy", "biased_mnist"], required=True
-    )
     parser.add_argument("--n_processes", type=int, default=16)
     args = parser.parse_args()
-    if args.problem == "toy":
-        configs = generate_toy_configs()
-    elif args.problem == "biased_mnist":
-        lib_biased_mnist.prepare_all_data()
-        configs = generate_biased_mnist_configs()
-    else:
-        raise ValueError(f"Unrecognized problem: {problem}")
+    lib_biased_mnist.prepare_all_data()
+    configs = generate_biased_mnist_configs()
 
     total_configs = len(configs)
     tasks = []
