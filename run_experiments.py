@@ -10,6 +10,8 @@ from typing import List
 from tqdm import tqdm
 import lib_biased_mnist
 
+LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99]
+
 
 def make_biased_mnist_runs(
     indep: str, k: str, l: float, corr: float, model: str, runs: int,
@@ -57,7 +59,6 @@ problem: biased_mnist
 
 def generate_biased_mnist_configs() -> List[Path]:
     """ Returns a list of configs to run. """
-    l_corr = [0.999, 0.997, 0.995, 0.99]
     lambdas = [
         0,
         1,
@@ -73,7 +74,7 @@ def generate_biased_mnist_configs() -> List[Path]:
     for indep in ["conditional_hsic", "unbiased_hsic"]:
         for k in kernels:
             for l in lambdas:
-                for corr in l_corr:
+                for corr in LABEL_CORRELATIONS:
                     for m in models:
                         ret.extend(make_biased_mnist_runs(indep, k, l, corr, m, runs))
     return ret
@@ -83,7 +84,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_processes", type=int, default=16)
     args = parser.parse_args()
-    lib_biased_mnist.prepare_all_data()
+    lib_biased_mnist.regenerate_all_data(LABEL_CORRELATIONS)
     configs = generate_biased_mnist_configs()
 
     total_configs = len(configs)

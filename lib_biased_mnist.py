@@ -216,6 +216,7 @@ def get_biased_mnist_data(
     data_label_correlation: float,
     train: bool = True,
     n_confusing_labels: int = 9,
+    force_regenerate: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     train_ext = "train" if train else "test"
     fname = (
@@ -223,7 +224,7 @@ def get_biased_mnist_data(
         / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}.npz"
     )
 
-    if not fname.exists():
+    if force_regenerate or not fname.exists():
         dataset = ColourBiasedMNIST(
             root,
             train=train,
@@ -291,6 +292,17 @@ class BiasedMnistProblem(lib_problem.Problem):
         select = tf.math.reduce_any(matches_any, axis=0)
         return X[select], y[select], y_biased[select]
 
+    def force_regenerate_data(self):
+        get_biased_mnist_data(
+            "~/.datasets/mnist/",
+            self.training_data_label_correlation,
+            train=True,
+            force_regenerate=True,
+        )
+        get_biased_mnist_data(
+            "~/.datasets/mnist/", 0.0, train=False, force_regenerate=True
+        )
+
     def generate_training_data(self, include_bias: bool = False) -> tf.data.Dataset:
         if include_bias:
             to_select = 3
@@ -303,7 +315,6 @@ class BiasedMnistProblem(lib_problem.Problem):
                         "~/.datasets/mnist/",
                         self.training_data_label_correlation,
                         train=True,
-                        # n_confusing_labels=len(self.filter_for_digits),
                     )
                 )[:to_select]
             )
@@ -318,18 +329,15 @@ class BiasedMnistProblem(lib_problem.Problem):
             to_select = 2
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
-                *get_biased_mnist_data(
-                    "~/.datasets/mnist/",
-                    0.0,
-                    train=False,
-                    # n_confusing_labels=len(self.filter_for_digits),
-                ),
+                *get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False,),
             )[:to_select]
         ).cache()
 
 
-def prepare_all_data():
-    p = BiasedMnistProblem()
-    p.generate_testing_data()
-    p.generate_training_data()
+def regenerate_all_data(label_correlations: List[float]):
+    get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False, force_regenerate=True)
+    for l in label_correlations:
+        get_biased_mnist_data(
+            "~/.datasets/mnist/", l, train=True, force_regenerate=True
+        )
 
