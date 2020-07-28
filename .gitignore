@@ -6,5 +6,4 @@ ensemble_results/
 logs/
 data/
 **/*.png
-results.json
 biased_mnist/
