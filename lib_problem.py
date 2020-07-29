@@ -373,20 +373,11 @@ class Problem(object):
             self.on_epoch_end(epoch)
 
         results = {}
-        weights = {}
-        for im, m in enumerate(self.models):
-            cur_w = {}
-            for w in m.trainable_variables:
-                cur_w[w.name] = w.numpy().tolist()
-            weights[im] = cur_w
-        results["weights"] = weights
-
         for ms in self.metrics:
             res = [float(m.result().numpy()) for m in ms]
             metric_name = ms[0].name
             if len(res) == 1:
                 res = res[0]
             results[metric_name] = res
-
         results["name"] = self.name
-        return results
+        return results, self.models

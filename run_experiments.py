@@ -10,7 +10,7 @@ from typing import List
 from tqdm import tqdm
 import lib_biased_mnist
 
-LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99]
+LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99, 0.9]
 
 
 def make_biased_mnist_runs(
@@ -45,10 +45,12 @@ BiasedMnistProblem.filter_for_digits = [0, 1]
 
         results_json = d / "results.json"
         yaml_config = d / "config.yaml"
+        models_output_dir = d / "models"
         yaml_config.write_text(
             f"""
 gin_config_file: {str(gin_config)}
 results_json_output: {str(results_json)}
+models_output_dir: {str(models_output_dir)}
 epochs: 100
 problem: biased_mnist
 """
@@ -66,12 +68,12 @@ def generate_biased_mnist_configs() -> List[Path]:
         64,
         128,
     ]
-    models = ["mlp"]  # , "cnn"]
+    models = ["mlp"]
     kernels = ["rbf"]
     runs = 1
 
     ret = []
-    for indep in ["conditional_hsic", "unbiased_hsic"]:
+    for indep in ["unbiased_hsic"]:
         for k in kernels:
             for l in lambdas:
                 for corr in LABEL_CORRELATIONS:

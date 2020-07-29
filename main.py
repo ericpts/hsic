@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_probability as tfp
 import gin
-import gin.tf
 import argparse
 import yaml
 from datetime import datetime
@@ -37,7 +36,16 @@ def main(config: Dict, gin_overrides: List[str]):
     else:
         raise ValueError(f'Unexpected problem: {config["problem"]}')
 
-    results = problem.train(epochs)
+    results, models = problem.train(epochs)
+
+    model_paths = []
+    for im, m in enumerate(models):
+        out = Path(config["models_output_dir"]) / f"model-{im}.h5"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        m.save(str(out))
+        model_paths.append(out)
+    results["model_paths"] = model_paths
+
     with open(config["results_json_output"], "w+t") as f:
         json.dump(results, f)
 
