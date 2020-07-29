@@ -38,17 +38,17 @@ def unbiased_hsic(
     assert n_variables == 2
 
     matrices = [k.matrix(f, f) for f in xs]
-    matrices = [m - tf.linalg.diag(tf.linalg.diag_part(m)) for m in matrices]
+    matrices = [m - tf.linalg.diag_part(m) for m in matrices]
 
     tK = matrices[0]
-    tL = matrices[0]
+    tL = matrices[1]
 
     score = (
         tf.linalg.trace(tK @ tL)
         + (tf.reduce_sum(tK) * tf.reduce_sum(tL) / (n - 1) / (n - 2))
         - (
             2
-            * tf.tensordot(tf.reduce_sum(tK, axis=0), tf.reduce_sum(tL, axis=0), 0)
+            * tf.reduce_sum(tf.reduce_sum(tK, axis=0) * tf.reduce_sum(tL, axis=0))
             / (n - 2)
         )
     )
