@@ -24,11 +24,6 @@ def main(config: Dict, gin_overrides: List[str]):
 
     gin.parse_config_files_and_bindings([config["gin_config_file"]], gin_overrides)
 
-    if "epochs" in config:
-        epochs = config["epochs"]
-    else:
-        epochs = 10
-
     if config["problem"] == "toy":
         problem = lib_toy.ToyProblem()
     elif config["problem"] == "biased_mnist":
@@ -36,14 +31,14 @@ def main(config: Dict, gin_overrides: List[str]):
     else:
         raise ValueError(f'Unexpected problem: {config["problem"]}')
 
-    results, models = problem.train(epochs)
+    results, models = problem.train()
 
     model_paths = []
     for im, m in enumerate(models):
         out = Path(config["models_output_dir"]) / f"model-{im}.h5"
         out.parent.mkdir(parents=True, exist_ok=True)
         m.save(str(out))
-        model_paths.append(out)
+        model_paths.append(str(out))
     results["model_paths"] = model_paths
 
     with open(config["results_json_output"], "w+t") as f:
@@ -59,12 +54,20 @@ def cli_main():
         required=True,
     )
     parser.add_argument(
-        "--gin_override", type=str, help="Override gin parameters", nargs="*"
+        "--gin_override",
+        type=str,
+        help="Override gin parameters",
+        nargs="*",
+        action="append",
     )
     args = parser.parse_args()
     assert Path(args.yaml_config_file).exists
     config = yaml.load(Path(args.yaml_config_file).read_text(), Loader=yaml.FullLoader)
-    return main(config, args.gin_override)
+
+    gin_overrides = []
+    for opt in args.gin_override:
+        gin_overrides.extend(opt)
+    return main(config, gin_overrides)
 
 
 if __name__ == "__main__":

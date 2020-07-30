@@ -247,12 +247,20 @@ def make_base_cnn_model(n_classes: int) -> tf.keras.Model:
     inputs = tf.keras.layers.Input((28, 28, 3))
 
     X = inputs
+    X = tf.keras.layers.Conv2D(4, kernel_size=3)(X)
+    X = tf.keras.layers.ReLU()(X)
+    X = tf.keras.layers.BatchNormalization()(X)
+
     X = tf.keras.layers.Conv2D(8, kernel_size=3)(X)
     X = tf.keras.layers.ReLU()(X)
     X = tf.keras.layers.BatchNormalization()(X)
 
-    X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(n_classes * 2)(X)
+    X = tf.keras.layers.Conv2D(16, kernel_size=3)(X)
+    X = tf.keras.layers.ReLU()(X)
+    X = tf.keras.layers.BatchNormalization()(X)
+
+    X = tf.keras.layers.GlobalAveragePooling2D()(X)
+
     feature_extractor = X
 
     X = tf.keras.layers.Dense(n_classes)(X)
@@ -275,10 +283,16 @@ class BiasedMnistProblem(lib_problem.Problem):
         self,
         training_data_label_correlation: float = 0.99,
         filter_for_digits: List[int] = list(range(10)),
+        model_type: str = "mlp",
         *args,
         **kwargs,
     ) -> None:
-        make_base_model = lambda: make_base_mlp_model(len(filter_for_digits))
+        if model_type == "mlp":
+            make_base_model = lambda: make_base_mlp_model(len(filter_for_digits))
+        elif model_type == "cnn":
+            make_base_model = lambda: make_base_cnn_model(len(filter_for_digits))
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}!")
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
         self.training_data_label_correlation = training_data_label_correlation
         self.filter_for_digits = tf.convert_to_tensor(filter_for_digits)

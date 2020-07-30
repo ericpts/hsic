@@ -1,5 +1,4 @@
 gin_config_file: config.gin
 results_json_output: results.json
-models_output_dir: /tmp/
-epochs: 100
+models_output_dir: ./
 problem: biased_mnist

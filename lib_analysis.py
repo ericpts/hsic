@@ -41,7 +41,7 @@ def _parse_gin_config(config: str) -> Dict[str, Any]:
     return ret
 
 
-def _read_problem_raw_data(root: Path, problem: str) -> pd.DataFrame:
+def read_problem(root: Path, problem: str) -> pd.DataFrame:
     rows = []
     for yaml_config in (root / problem).glob("**/config.yaml"):
         with open(yaml_config, "rt") as f:
@@ -63,40 +63,6 @@ def _read_problem_raw_data(root: Path, problem: str) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df = df.rename(columns=_gin_columns_rename)
     return df
-
-
-def _weights_to_numpy(weights: pd.Series):
-    ret = {}
-    for inet in weights.keys():
-        ret[inet] = {}
-        for ilayer, wlayer in weights[inet].items():
-            ret[inet][ilayer] = np.asarray(wlayer)
-    return ret
-
-
-def _process_weights_for_cos_and_norm(weights: pd.Series):
-    w0 = weights["0"]["dense/kernel:0"]
-    w1 = weights["1"]["dense_2/kernel:0"]
-
-    norm_0 = float(np.linalg.norm(w0))
-    norm_1 = float(np.linalg.norm(w1))
-
-    w0_normed = w0.T / np.linalg.norm(w0, axis=0)[:, np.newaxis]
-    w1_normed = w1.T / np.linalg.norm(w1, axis=0)[:, np.newaxis]
-
-    c = w0_normed @ w1_normed.T
-    c = np.absolute(c)
-    assert (c <= 1).all()
-    c = c.max()
-    ret = pd.Series({"cos": c, "norm": (norm_0, norm_1)})
-    return ret
-
-
-def read_problem(root: Path, problem: str) -> pd.DataFrame:
-    DF = _read_problem_raw_data(root, problem)
-    DF["weights"] = DF["weights"].apply(_weights_to_numpy)
-    DF[["cos", "norm"]] = DF["weights"].apply(_process_weights_for_cos_and_norm)
-    return DF
 
 
 def l2_probability_distance(y_hat: tf.Tensor) -> tf.Tensor:

@@ -1,5 +1,8 @@
 diversity_loss.kernel = 'rbf'
-diversity_loss.independence_measure = 'unbiased_hsic'
+diversity_loss.independence_measure = 'conditional_hsic'
 compute_combined_loss.diversity_loss_coefficient = 1
 BiasedMnistProblem.training_data_label_correlation = 0.999
-BiasedMnistProblem.filter_for_digits = [0, 1]
+BiasedMnistProblem.filter_for_digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+BiasedMnistProblem.model_type = 'cnn'
+Problem.initial_lr = 0.01
+Problem.n_epochs = 100

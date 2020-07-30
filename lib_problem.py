@@ -223,6 +223,7 @@ def compute_combined_loss(
     return diversity_loss_coefficient * div_loss + tf.reduce_sum(prediction_loss)
 
 
+@gin.configurable
 class Problem(object):
     def __init__(
         self,
@@ -230,15 +231,18 @@ class Problem(object):
         make_base_model: Callable[[], tf.keras.Model],
         batch_size: int = 256,
         n_models: int = 2,
+        initial_lr: float = 0.001,
+        n_epochs: int = 100,
     ) -> None:
         self.name = name
         self.batch_size = batch_size
         self.n_models = n_models
 
         self.models = [make_base_model() for i in range(self.n_models)]
-        self.lr = tf.Variable(0.01)
+        self.lr = tf.Variable(initial_lr)
         self.optimizer = tf.keras.optimizers.Nadam(lr=self.lr, epsilon=0.001)
         self.decrease_lr_at_epochs = [20, 40, 80]
+        self.n_epochs = n_epochs
 
         self.variables = []
         for m in self.models:
@@ -355,11 +359,11 @@ class Problem(object):
             self.lr.assign(self.lr.value() / 10.0)
             self.decrease_lr_at_epochs.pop(0)
 
-    def train(self, epochs: int):
+    def train(self):
         D_train = self.generate_training_data()
         D_test = self.generate_testing_data()
 
-        for epoch in range(epochs):
+        for epoch in range(self.n_epochs):
             self.on_epoch_start(epoch)
 
             for (X, y) in D_test.batch(self.batch_size).prefetch(4):
