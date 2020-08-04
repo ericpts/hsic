@@ -58,29 +58,15 @@ def unbiased_hsic(
 def cka(
     xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
 ) -> tf.Tensor:
-    n_samples = xs[0].shape[0]
-    n_variables = len(xs)
+    return hsic(xs, k) / tf.math.sqrt(hsic([xs[0], xs[0]], k) * hsic([xs[1], xs[1]], k))
 
-    H = tf.eye(n_samples) - 1 / n_samples
-    centered_gram_matrices = [k.matrix(f, f) @ H for f in xs]
 
-    pair_losses = []
-    for i in range(n_variables):
-        for j in range(i + 1, n_variables):
-            up = tf.linalg.trace(centered_gram_matrices[i] @ centered_gram_matrices[j])
-
-            down_i = tf.linalg.trace(
-                centered_gram_matrices[i] @ centered_gram_matrices[i]
-            )
-
-            down_j = tf.linalg.trace(
-                centered_gram_matrices[j] @ centered_gram_matrices[j]
-            )
-
-            s = up / tf.sqrt(down_i * down_j)
-            pair_losses.append(s)
-
-    return tf.reduce_mean(pair_losses)
+def unbiased_cka(
+    xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
+) -> tf.Tensor:
+    return unbiased_hsic(xs, k) / tf.math.sqrt(
+        tf.math.abs(unbiased_hsic([xs[0], xs[0]], k) * unbiased_hsic([xs[1], xs[1]], k))
+    )
 
 
 def label_kernel(l_0, l_1):
@@ -121,6 +107,17 @@ def conditional_hsic(
     ret = tf.reduce_mean(pair_losses) / n
 
     return ret
+
+
+def conditional_cka(
+    xs: List[tf.Tensor],
+    labels: tf.Tensor,
+    k: tfp.math.psd_kernels.PositiveSemidefiniteKernel,
+) -> tf.Tensor:
+    return conditional_hsic(xs, labels, k) / tf.math.sqrt(
+        conditional_hsic([xs[0], xs[0]], labels, k)
+        * conditional_hsic([xs[1], xs[1]], labels, k)
+    )
 
 
 def manual_chsic(c, s, y, k):
@@ -180,6 +177,10 @@ def diversity_loss(
 
     if independence_measure == "cka":
         return cka(features, k)
+    if independence_measure == "unbiased_cka":
+        return unbiased_cka(features, k)
+    elif independence_measure == "conditional_cka":
+        return conditional_cka(features, y, k)
     elif independence_measure == "hsic":
         return hsic(features, k)
     elif independence_measure == "unbiased_hsic":
@@ -233,6 +234,7 @@ class Problem(object):
         n_models: int = 2,
         initial_lr: float = 0.001,
         n_epochs: int = 100,
+        decrease_lr_at_epochs: List[int] = [20, 40, 80],
     ) -> None:
         self.name = name
         self.batch_size = batch_size
@@ -241,7 +243,7 @@ class Problem(object):
         self.models = [make_base_model() for i in range(self.n_models)]
         self.lr = tf.Variable(initial_lr)
         self.optimizer = tf.keras.optimizers.Nadam(lr=self.lr, epsilon=0.001)
-        self.decrease_lr_at_epochs = [20, 40, 80]
+        self.decrease_lr_at_epochs = decrease_lr_at_epochs
         self.n_epochs = n_epochs
 
         self.variables = []
@@ -280,6 +282,10 @@ class Problem(object):
             self.metrics.append([m])
             setattr(self, f"{t}_combined_loss", m)
 
+            m = tf.keras.metrics.Accuracy(f"{t}_ensemble_accuracy")
+            self.metrics.append([m])
+            setattr(self, f"{t}_ensemble_accuracy", m)
+
     def init_logging(self):
         self.base_log_dir = Path(
             f"logs/{self.name}/{datetime.now().strftime('%Y%m%d-%H%M%S')}/"
@@ -297,6 +303,7 @@ class Problem(object):
             (features, ys_pred) = forward(X, y, self.models)
             prediction_loss = [label_loss(y, y_pred) for y_pred in ys_pred]
             div_loss = diversity_loss(features, y)
+
             loss = compute_combined_loss(prediction_loss, div_loss)
             gradients = tape.gradient(loss, self.variables)
 
@@ -305,6 +312,12 @@ class Problem(object):
         for ip, p_loss in enumerate(prediction_loss):
             self.train_prediction_loss[ip](p_loss)
         self.train_diversity_loss(div_loss)
+
+        probabilities = [tf.nn.softmax(y_pred, axis=-1) for y_pred in ys_pred]
+        ensemble_probabilities = tf.math.reduce_mean(probabilities, axis=0)
+        self.train_ensemble_accuracy.update_state(
+            y_true=y, y_pred=tf.math.argmax(ensemble_probabilities, axis=1)
+        )
 
         for ip, y_pred in enumerate(ys_pred):
             self.train_accuracy[ip].update_state(
@@ -322,6 +335,12 @@ class Problem(object):
         for ip, p_loss in enumerate(prediction_loss):
             self.test_prediction_loss[ip](p_loss)
         self.test_diversity_loss(div_loss)
+
+        probabilities = [tf.nn.softmax(y_pred, axis=-1) for y_pred in ys_pred]
+        ensemble_probabilities = tf.math.reduce_mean(probabilities, axis=0)
+        self.test_ensemble_accuracy.update_state(
+            y_true=y, y_pred=tf.math.argmax(ensemble_probabilities, axis=1)
+        )
 
         for ip, y_pred in enumerate(ys_pred):
             self.test_accuracy[ip].update_state(

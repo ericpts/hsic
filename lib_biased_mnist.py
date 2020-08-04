@@ -76,21 +76,6 @@ class ColourBiasedMNIST(MNIST):
         [128, 128, 128],
     ]
 
-    # COLOUR_MAP = [
-    #     # 0
-    #     [64, 64, 64],
-    #     [200, 200, 200],
-    #     [0, 0, 255],
-    #     [225, 225, 0],
-    #     [225, 0, 225],
-    #     # 5
-    #     [0, 255, 255],
-    #     [255, 128, 0],
-    #     [255, 0, 128],
-    #     [128, 0, 255],
-    #     [255, 0, 0],
-    # ]
-
     def __init__(
         self,
         root,
@@ -98,12 +83,13 @@ class ColourBiasedMNIST(MNIST):
         download=False,
         data_label_correlation=1.0,
         n_confusing_labels=9,
+        background_noise_level=0,
     ):
         super().__init__(
             root, train=train, download=download,
         )
-        self.n_shuffles = 0
-        self.random = True
+        np.random.seed(0)
+        self.background_noise_level = background_noise_level
 
         self.data_label_correlation = data_label_correlation
         self.n_confusing_labels = n_confusing_labels
@@ -127,10 +113,7 @@ class ColourBiasedMNIST(MNIST):
         return os.path.join(self.root, "processed")
 
     def _shuffle(self, iteratable):
-        if self.random:
-            np.random.seed(self.n_shuffles)
-            self.n_shuffles += 1
-            np.random.shuffle(iteratable)
+        np.random.shuffle(iteratable)
 
     def _binary_to_colour(self, data, colour):
         fg_data = torch.zeros_like(data)
@@ -144,6 +127,13 @@ class ColourBiasedMNIST(MNIST):
         bg_data = torch.stack([bg_data, bg_data, bg_data], dim=3)
         bg_data = bg_data * torch.ByteTensor(colour)
 
+        noise = torch.randint(
+            -self.background_noise_level,
+            self.background_noise_level + 1,
+            bg_data.size(),
+        )
+        noise[data != 0] = 0
+        bg_data = torch.clamp(bg_data + noise, 0, 255).type(fg_data.dtype)
         data = fg_data + bg_data
         return data
 
@@ -217,30 +207,27 @@ def get_biased_mnist_data(
     train: bool = True,
     n_confusing_labels: int = 9,
     force_regenerate: bool = False,
+    background_noise_level: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    train_ext = "train" if train else "test"
-    fname = (
-        Path(root).expanduser()
-        / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}.npz"
+
+    dataset = ColourBiasedMNIST(
+        root,
+        train=train,
+        download=True,
+        data_label_correlation=data_label_correlation,
+        n_confusing_labels=n_confusing_labels,
+        background_noise_level=background_noise_level,
+    )
+    return (
+        dataset.data,
+        dataset.targets,
+        dataset.biased_targets,
     )
 
-    if force_regenerate or not fname.exists():
-        dataset = ColourBiasedMNIST(
-            root,
-            train=train,
-            download=True,
-            data_label_correlation=data_label_correlation,
-            n_confusing_labels=n_confusing_labels,
-        )
-        img, labels, biased_labels = (
-            dataset.data,
-            dataset.targets,
-            dataset.biased_targets,
-        )
-        np.savez(fname, img=img, labels=labels, biased_labels=biased_labels)
 
-    npz = np.load(fname)
-    return (npz["img"], npz["labels"], npz["biased_labels"])
+@gin.configurable
+def get_weight_regularizer(strength: float = 0.01):
+    return tf.keras.regularizers.l2(strength)
 
 
 def make_base_cnn_model(n_classes: int) -> tf.keras.Model:
@@ -268,12 +255,13 @@ def make_base_cnn_model(n_classes: int) -> tf.keras.Model:
 
 
 def make_base_mlp_model(n_classes: int) -> tf.keras.Model:
+    reg = get_weight_regularizer()
     inputs = tf.keras.layers.Input((28, 28, 3))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(n_classes * 2)(X)
+    X = tf.keras.layers.Dense(n_classes * 2, kernel_regularizer=reg)(X)
     feature_extractor = X
-    X = tf.keras.layers.Dense(n_classes)(X)
+    X = tf.keras.layers.Dense(n_classes, kernel_regularizer=reg)(X)
     return tf.keras.Model(inputs, outputs=[feature_extractor, X])
 
 
@@ -284,6 +272,7 @@ class BiasedMnistProblem(lib_problem.Problem):
         training_data_label_correlation: float = 0.99,
         filter_for_digits: List[int] = list(range(10)),
         model_type: str = "mlp",
+        background_noise_level: int = 0,
         *args,
         **kwargs,
     ) -> None:
@@ -296,6 +285,7 @@ class BiasedMnistProblem(lib_problem.Problem):
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
         self.training_data_label_correlation = training_data_label_correlation
         self.filter_for_digits = tf.convert_to_tensor(filter_for_digits)
+        self.background_noise_level = background_noise_level
 
     def filter_tensors(
         self, X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor
@@ -305,17 +295,6 @@ class BiasedMnistProblem(lib_problem.Problem):
         matches_any = [tf.math.equal(y, d) for d in self.filter_for_digits]
         select = tf.math.reduce_any(matches_any, axis=0)
         return X[select], y[select], y_biased[select]
-
-    def force_regenerate_data(self):
-        get_biased_mnist_data(
-            "~/.datasets/mnist/",
-            self.training_data_label_correlation,
-            train=True,
-            force_regenerate=True,
-        )
-        get_biased_mnist_data(
-            "~/.datasets/mnist/", 0.0, train=False, force_regenerate=True
-        )
 
     def generate_training_data(self, include_bias: bool = False) -> tf.data.Dataset:
         if include_bias:
@@ -329,6 +308,7 @@ class BiasedMnistProblem(lib_problem.Problem):
                         "~/.datasets/mnist/",
                         self.training_data_label_correlation,
                         train=True,
+                        background_noise_level=self.background_noise_level,
                     )
                 )[:to_select]
             )
@@ -343,15 +323,40 @@ class BiasedMnistProblem(lib_problem.Problem):
             to_select = 2
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
-                *get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False,),
+                *get_biased_mnist_data(
+                    "~/.datasets/mnist/", 0.1, train=False, background_noise_level=0,
+                )
             )[:to_select]
         ).cache()
 
 
-def regenerate_all_data(label_correlations: List[float]):
-    get_biased_mnist_data("~/.datasets/mnist/", 0.0, train=False, force_regenerate=True)
-    for l in label_correlations:
+def regenerate_all_data(
+    label_correlations: List[float], background_noise_levels: List[int]
+):
+    get_biased_mnist_data("~/.datasets/mnist/", 0.1, train=False, force_regenerate=True)
+
+    for bg_noise in background_noise_levels:
+        for label_corr in label_correlations:
+            get_biased_mnist_data(
+                "~/.datasets/mnist/",
+                label_corr,
+                train=True,
+                force_regenerate=True,
+                background_noise_level=bg_noise,
+            )
         get_biased_mnist_data(
-            "~/.datasets/mnist/", l, train=True, force_regenerate=True
+            "~/.datasets/mnist/",
+            0.0,
+            train=False,
+            force_regenerate=True,
+            background_noise_level=bg_noise,
         )
+
+    get_biased_mnist_data(
+        "~/.datasets/mnist/",
+        0.0,
+        train=False,
+        force_regenerate=True,
+        background_noise_level=0,
+    )
 

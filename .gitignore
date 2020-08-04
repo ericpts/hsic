@@ -8,3 +8,4 @@ data/
 **/*.png
 results.json
 biased_mnist/
+*.h5

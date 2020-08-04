@@ -1,13 +1,18 @@
 from collections import defaultdict
 from pathlib import Path
 from plotly.colors import n_colors
+from plotly.subplots import make_subplots
 from typing import Dict, Any, Callable
 from typing import List, Optional
 import argparse
 import concurrent.futures
+import dash_core_components as dcc
+import dash_html_components as html
 import gin
 import json
 import json
+import lib_problem
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
@@ -109,7 +114,7 @@ def plot_biased_digit_grid(X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor):
     plt.show()
 
 
-def pretty_print_matrix(matrix: np.ndarray):
+def pretty_print_matrix(matrix: np.ndarray) -> go.Figure:
     colors = n_colors("rgb(200, 200, 250)", "rgb(250, 200, 200)", 101, colortype="rgb")
     colors = np.array(colors)
 
@@ -168,10 +173,10 @@ def pretty_print_matrix(matrix: np.ndarray):
     )
     fig.update_layout(width=1000, height=150)
     fig.update_yaxes(automargin=True)
-    fig.show()
+    return fig
 
 
-def for_one_confusion_matrix(
+def make_confusion_matrix(
     X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_label_hat: tf.Tensor
 ):
     assert X.shape[0] == y.shape[0]
@@ -185,8 +190,6 @@ def for_one_confusion_matrix(
         ((np.max(digits) + 1), len(backgrounds)), dtype=(int, 2)
     )
 
-    bias_matrix = np.ndarray(((np.max(digits) + 1), len(backgrounds)), dtype=(int, 2))
-
     for i in digits:
         for j in backgrounds:
             select = (y == i) & (y_biased == j)
@@ -194,108 +197,177 @@ def for_one_confusion_matrix(
             accuracy = tf.math.count_nonzero(y_label_hat[select] == y[select])
             bias = tf.math.count_nonzero(y_label_hat[select] == y_biased[select])
             digit_accuracy_matrix[i, j] = (accuracy, total_entries)
-            bias_matrix[i, j] = (bias, total_entries)
-    return digit_accuracy_matrix, bias_matrix
+    return digit_accuracy_matrix
 
 
-def render_confusion_matrices(
-    X: tf.Tensor,
-    y: tf.Tensor,
-    y_biased: tf.Tensor,
-    y_label_hat: tf.Tensor,
-    models: List[int] = [0, 1],
-    differences: bool = False,
+def _compute_overall_statistics(
+    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
 ):
-    assert X.shape[0] == y.shape[0]
-    assert X.shape[0] == y_biased.shape[0]
-    assert X.shape[0] == y_label_hat.shape[0]
-    models_confusion_matrix = [
-        for_one_confusion_matrix(X, y, y_biased, y_label_hat[:, im]) for im in [0, 1]
+    n_total = y.shape[0]
+
+    ensemble_y_label_hat = tf.argmax(tf.math.reduce_mean(y_hat, 1), axis=-1)
+    ensemble_accuracy = tf.math.count_nonzero(ensemble_y_label_hat == y) / n_total
+
+    y_label_hat = tf.argmax(y_hat, axis=-1)
+    model_accuracy = [
+        tf.math.count_nonzero(y_label_hat[:, im] == y) / n_total for im in range(2)
     ]
 
-    for im in models:
-        print(f"Model {im}:")
-        print(f"\tPredicted digit:")
-        pretty_print_matrix(models_confusion_matrix[im][0])
-        print(f"\tPredicted bg:")
-        pretty_print_matrix(models_confusion_matrix[im][1])
+    return html.Div(
+        [
+            html.H5("Overall statistics"),
+            html.Div(
+                [
+                    html.H6("Ensemble"),
+                    html.P(f"Accuracy: {ensemble_accuracy * 100:.2f}%"),
+                    dcc.Graph(
+                        figure=pretty_print_matrix(
+                            make_confusion_matrix(X, y, y_biased, ensemble_y_label_hat)
+                        )
+                    ),
+                ]
+            ),
+            *[
+                html.Div(
+                    [
+                        html.H6(f"Model {im}"),
+                        html.P(f"Accuracy: {model_accuracy[im] * 100:.2f}%"),
+                        dcc.Graph(
+                            figure=pretty_print_matrix(
+                                make_confusion_matrix(
+                                    X, y, y_biased, tf.argmax(y_hat[:, im], axis=-1)
+                                )
+                            )
+                        ),
+                    ]
+                )
+                for im in range(2)
+            ],
+        ]
+    )
 
-    if differences:
-        print("Differences: ")
-        print("\tDigit:")
-        pretty_print_df(
-            pd.DataFrame(
-                np.absolute(
-                    models_confusion_matrix[0][0] - models_confusion_matrix[1][0]
+
+def _compute_disagreement_statistics(
+    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+):
+    y_label_hat = tf.argmax(y_hat, axis=-1)
+
+    n_original = y.shape[0]
+    select = y_label_hat[:, 0] != y_label_hat[:, 1]
+    n_select = tf.math.count_nonzero(select)
+
+    if n_select == 0:
+        return html.H5("No disagreement")
+
+    X = X[select]
+    y = y[select]
+    y_biased = y_biased[select]
+    y_label_hat = y_label_hat[select]
+
+    model_accuracy = [
+        tf.math.count_nonzero(y_label_hat[:, im] == y) / n_select for im in range(2)
+    ]
+
+    return html.Div(
+        [
+            html.H5("On disagreement"),
+            html.P(
+                f"Total % of data: {n_select} / {n_original} ({n_select / n_original * 100:.2f}%)"
+            ),
+            *[
+                html.Div(
+                    [
+                        html.H6(f"Model {im}"),
+                        html.P(f"Accuracy: {model_accuracy[im] * 100:.2f}%"),
+                        dcc.Graph(
+                            figure=pretty_print_matrix(
+                                make_confusion_matrix(
+                                    X, y, y_biased, y_label_hat[:, im]
+                                )
+                            )
+                        ),
+                    ]
                 )
-            )
-        )
-        print("\tBg:")
-        pretty_print_df(
-            pd.DataFrame(
-                np.absolute(
-                    models_confusion_matrix[0][1] - models_confusion_matrix[1][1]
-                )
-            )
-        )
+                for im in range(2)
+            ],
+        ]
+    )
+
+
+def _compute_agreement_statistics(
+    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+):
+    y_label_hat = tf.argmax(y_hat, axis=-1)
+
+    n_original = y.shape[0]
+    select = y_label_hat[:, 0] == y_label_hat[:, 1]
+    n_select = tf.math.count_nonzero(select)
+
+    X = X[select]
+    y = y[select]
+    y_biased = y_biased[select]
+    y_label_hat = y_label_hat[select][:, 0]
+
+    acc = tf.math.count_nonzero(y_label_hat == y) / n_select
+    return html.Div(
+        [
+            html.H5("On agreement"),
+            html.P(
+                f"Total % of data: {n_select} / {n_original} ({n_select / n_original * 100:.2f}%)"
+            ),
+            html.P(f"Accuracy: {acc * 100:.2f}%"),
+            html.Div(
+                [
+                    html.H6(f"Overall confusion matrix"),
+                    dcc.Graph(
+                        figure=pretty_print_matrix(
+                            make_confusion_matrix(X, y, y_biased, y_label_hat)
+                        )
+                    ),
+                ]
+            ),
+        ]
+    )
 
 
 def print_statistics(
-    X: tf.Tensor,
-    y: tf.Tensor,
-    y_biased: tf.Tensor,
-    y_hat: tf.Tensor,
-    print_digits: bool = False,
-    print_confusion_matrices: bool = False,
+    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
 ):
-    y_label_hat = tf.argmax(y_hat, axis=-1, output_type=tf.int32)
-    select = y_label_hat[:, 0] != y_label_hat[:, 1]
+    overall_statistics = _compute_overall_statistics(X, y, y_biased, y_hat)
+    disagreement_statistics = _compute_disagreement_statistics(X, y, y_biased, y_hat)
+    agreement_statistics = _compute_agreement_statistics(X, y, y_biased, y_hat)
 
-    print("Nonzero in disagreement select: ", tf.math.count_nonzero(select).numpy())
+    return [overall_statistics, disagreement_statistics, agreement_statistics]
 
-    def print_resume_stats(d: tf.Tensor):
-        print(f"\t\tAverage probability distance: {tf.reduce_mean(d)}")
-        for q in [99, 90, 25, 10, 1]:
-            print(f"\t\t{q}% percentile: {tfp.stats.percentile(d, q)}")
 
-    d = l2_probability_distance(y_hat[select])
-    print("\tOn disagreement:")
+def process_dataset(
+    dataset: tf.data.Dataset, models: List[tf.keras.Model], batch_size: int
+) -> tf.Tensor:
+    Xs = []
+    true_labels = []
+    predicted = []
+    biased_labels = []
+    div_losses = []
+    for X, y, y_biased in dataset.batch(batch_size):
+        Xs.append(X)
+        (features, ys_pred) = lib_problem.forward(X, y, models)
 
-    if d.shape == 0:
-        print("\t\tNo disagreement!")
-    else:
-        print(
-            f"\t\tTotal % of data: {tf.math.count_nonzero(select)} / {y.shape[0]} ({tf.math.count_nonzero(select) / y.shape[0] * 100:.2f}%)"
-        )
-        for im in [0, 1]:
-            acc = tf.math.count_nonzero(
-                y_label_hat[select][:, im] == y[select]
-            ) / tf.math.count_nonzero(select)
-            print(f"\t\tModel {im} accuracy: {acc * 100:.2f}%")
-        print_resume_stats(d)
+        probabilities = tf.nn.softmax(ys_pred)
+        probabilities = tf.transpose(probabilities, [1, 0, 2])
+        true_labels.append(y)
+        biased_labels.append(y_biased)
+        predicted.append(probabilities)
 
-        if print_digits:
-            plot_digit_grid(X[select], y[select])
-        if print_confusion_matrices:
-            render_confusion_matrices(
-                X[select], y[select], y_biased[select], y_label_hat[select]
-            )
+        div = lib_problem.diversity_loss(features, y, "unbiased_hsic", "rbf").numpy()
+        div_losses.append(div)
 
-    acc = y_label_hat[~select][:, 0] == y[~select]
-    correct = tf.math.count_nonzero(acc)
-    total = tf.math.count_nonzero(~select)
-    acc = correct / total
+    Xs = tf.concat(Xs, 0)
+    true_labels = tf.concat(true_labels, 0)
+    biased_labels = tf.concat(biased_labels, 0)
+    predicted = tf.concat(predicted, 0)
+    div_losses = tf.concat(div_losses, 0)
 
-    print("\tOn agreement:")
-    print(f"\t\tTotal % of data: {tf.math.count_nonzero(~select) / y.shape[0]}")
-    print(f"\t\tAccuracy: {acc}")
-    d = l2_probability_distance(y_hat[~select])
-    print_resume_stats(d)
+    true_labels = tf.cast(true_labels, tf.int64)
+    biased_labels = tf.cast(biased_labels, tf.int64)
 
-    if print_digits:
-        plot_digit_grid(X[~select], y[~select])
-    if print_confusion_matrices:
-        render_confusion_matrices(
-            X[~select], y[~select], y_biased[~select], y_label_hat[~select], models=[0]
-        )
-
+    return Xs, true_labels, biased_labels, predicted
