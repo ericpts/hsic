@@ -341,7 +341,11 @@ def print_statistics(
 
 
 def process_dataset(
-    dataset: tf.data.Dataset, models: List[tf.keras.Model], batch_size: int
+    dataset: tf.data.Dataset,
+    models: List[tf.keras.Model],
+    batch_size: int,
+    include_div_losses: bool = False,
+    kernel: str = "unbiased_hsic",
 ) -> tf.Tensor:
     Xs = []
     true_labels = []
@@ -358,7 +362,7 @@ def process_dataset(
         biased_labels.append(y_biased)
         predicted.append(probabilities)
 
-        div = lib_problem.diversity_loss(features, y, "unbiased_hsic", "rbf").numpy()
+        div = lib_problem.diversity_loss(features, y, kernel, "rbf").numpy()
         div_losses.append(div)
 
     Xs = tf.concat(Xs, 0)
@@ -370,4 +374,8 @@ def process_dataset(
     true_labels = tf.cast(true_labels, tf.int64)
     biased_labels = tf.cast(biased_labels, tf.int64)
 
-    return Xs, true_labels, biased_labels, predicted
+    if include_div_losses:
+        return Xs, true_labels, biased_labels, predicted, div_losses
+    else:
+        return Xs, true_labels, biased_labels, predicted
+

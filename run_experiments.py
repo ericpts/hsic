@@ -10,7 +10,7 @@ from typing import List
 from tqdm import tqdm
 import lib_biased_mnist
 
-LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99]
+LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99, 0.9]
 NOISE_LEVELS = [0]
 
 
@@ -55,7 +55,7 @@ diversity_loss.independence_measure = '{indep}'
 diversity_loss.kernel = '{k}'
 compute_combined_loss.diversity_loss_coefficient = {l}
 BiasedMnistProblem.training_data_label_correlation = {corr}
-BiasedMnistProblem.filter_for_digits = [0, 1]
+BiasedMnistProblem.filter_for_digits = {list(range(10))}
 BiasedMnistProblem.model_type = 'mlp'
 BiasedMnistProblem.background_noise_level = {noise_level}
 Problem.n_epochs = 100
@@ -91,7 +91,9 @@ def generate_biased_mnist_configs() -> List[Path]:
         1,
         2,
         4,
+        8,
         16,
+        32,
         64,
         128,
         256,
@@ -104,7 +106,7 @@ def generate_biased_mnist_configs() -> List[Path]:
     ret = []
     for initial_lr in [1e0, 1e-1, 1e-2, 1e-3, 1e-4]:
         for noise_level in NOISE_LEVELS:
-            for indep in ["conditional_hsic"]:
+            for indep in ["conditional_hsic", "cka"]:
                 for k in kernels:
                     for l in lambdas:
                         for corr in LABEL_CORRELATIONS:
@@ -131,9 +133,8 @@ def main():
     lib_biased_mnist.regenerate_all_data(LABEL_CORRELATIONS, NOISE_LEVELS)
     configs = generate_biased_mnist_configs()
 
-    total_configs = len(configs)
     tasks = []
-    print("Generated configs.")
+    print(f"Generated {len(configs)} configs.")
 
     with concurrent.futures.ThreadPoolExecutor(args.n_processes) as exe:
         for ic, c in enumerate(configs):
@@ -142,11 +143,7 @@ def main():
             if ic % args.n_processes != 0:
                 env["CUDA_VISIBLE_DEVICES"] = ""
             sp_args = ["python3", "main.py", "--yaml_config_file", str(c)]
-            tasks.append(
-                exe.submit(
-                    subprocess.run, sp_args, check=True, env=env, capture_output=True
-                )
-            )
+            tasks.append(exe.submit(subprocess.run, sp_args, check=True, env=env,))
         print("Launched tasks.")
         for t in tqdm(concurrent.futures.as_completed(tasks)):
             pass

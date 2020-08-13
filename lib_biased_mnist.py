@@ -210,19 +210,30 @@ def get_biased_mnist_data(
     background_noise_level: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-    dataset = ColourBiasedMNIST(
-        root,
-        train=train,
-        download=True,
-        data_label_correlation=data_label_correlation,
-        n_confusing_labels=n_confusing_labels,
-        background_noise_level=background_noise_level,
+    train_ext = "train" if train else "test"
+    fname = (
+        Path(root).expanduser()
+        / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}_{background_noise_level}.npz"
     )
-    return (
-        dataset.data,
-        dataset.targets,
-        dataset.biased_targets,
-    )
+
+    if force_regenerate or not fname.exists():
+        dataset = ColourBiasedMNIST(
+            root,
+            train=train,
+            download=True,
+            data_label_correlation=data_label_correlation,
+            n_confusing_labels=n_confusing_labels,
+            background_noise_level=background_noise_level,
+        )
+        img, labels, biased_labels = (
+            dataset.data,
+            dataset.targets,
+            dataset.biased_targets,
+        )
+        np.savez(fname, img=img, labels=labels, biased_labels=biased_labels)
+
+    npz = np.load(fname)
+    return (npz["img"], npz["labels"], npz["biased_labels"])
 
 
 @gin.configurable
@@ -344,19 +355,4 @@ def regenerate_all_data(
                 force_regenerate=True,
                 background_noise_level=bg_noise,
             )
-        get_biased_mnist_data(
-            "~/.datasets/mnist/",
-            0.0,
-            train=False,
-            force_regenerate=True,
-            background_noise_level=bg_noise,
-        )
-
-    get_biased_mnist_data(
-        "~/.datasets/mnist/",
-        0.0,
-        train=False,
-        force_regenerate=True,
-        background_noise_level=0,
-    )
 
