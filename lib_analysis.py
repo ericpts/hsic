@@ -1,4 +1,5 @@
 from collections import defaultdict
+import string
 from pathlib import Path
 from plotly.colors import n_colors
 from plotly.subplots import make_subplots
@@ -23,6 +24,7 @@ import subprocess
 import tensorflow as tf
 import tensorflow_probability as tfp
 import yaml
+import lib_biased_mnist
 
 _gin_columns_rename = {
     "compute_combined_loss.diversity_loss_coefficient": "lambda",
@@ -48,11 +50,11 @@ def _parse_gin_config(config: str) -> Dict[str, Any]:
 
 def read_problem(root: Path, problem: str) -> pd.DataFrame:
     rows = []
-    for yaml_config in (root / problem).glob("**/config.yaml"):
-        with open(yaml_config, "rt") as f:
-            cfg_dict = yaml.load(f, Loader=yaml.CLoader)
+    for yaml_config_file in (root / problem).glob("**/config.yaml"):
+        with open(yaml_config_file, "rt") as f:
+            yaml_config_dict = yaml.load(f, Loader=yaml.CLoader)
 
-        results_json = root / cfg_dict["results_json_output"]
+        results_json = root / yaml_config_dict["results_json_output"]
         if not results_json.exists():
             print(f"Could not find {results_json}! Skipping folder...")
             continue
@@ -60,9 +62,18 @@ def read_problem(root: Path, problem: str) -> pd.DataFrame:
         with results_json.open("rt") as f:
             results_dict = json.load(f)
 
-        gin_config = _parse_gin_config((root / cfg_dict["gin_config_file"]).read_text())
+        gin_config_file = root / yaml_config_dict["gin_config_file"]
+        assert (
+            gin_config_file.exists()
+        ), f"Expected to find gin config at {gin_config_file}"
+        gin_config = _parse_gin_config(
+            (root / yaml_config_dict["gin_config_file"]).read_text()
+        )
         row = {**results_dict, **gin_config}
-        row["original_config"] = yaml_config
+
+        row["model_paths"] = [(root / p).resolve() for p in row["model_paths"]]
+        row["yaml_config_file"] = yaml_config_file.resolve()
+        row["gin_config_file"] = str(gin_config_file.resolve())
 
         rows.append(row)
     df = pd.DataFrame(rows)
@@ -131,6 +142,14 @@ def pretty_print_matrix(matrix: np.ndarray) -> go.Figure:
     for i in range(n_rows):
         for j in range(n_cols):
             (correct, total) = matrix[i, j, :]
+            if correct > total:
+                import ipdb
+
+                ipdb.set_trace()
+
+            assert (
+                correct <= total
+            ), f"We have more correct entries than total entries: for color {i} and background {j}"
             if total > 0:
                 percent = correct / total * 100
             else:
@@ -186,17 +205,21 @@ def make_confusion_matrix(
     digits = np.unique(y)
     backgrounds = list(range(10))
 
-    digit_accuracy_matrix = np.ndarray(
+    digit_accuracy_matrix = np.zeros(
         ((np.max(digits) + 1), len(backgrounds)), dtype=(int, 2)
     )
 
     for i in digits:
         for j in backgrounds:
             select = (y == i) & (y_biased == j)
-            total_entries = tf.math.count_nonzero(select)
-            accuracy = tf.math.count_nonzero(y_label_hat[select] == y[select])
-            bias = tf.math.count_nonzero(y_label_hat[select] == y_biased[select])
-            digit_accuracy_matrix[i, j] = (accuracy, total_entries)
+            total = tf.math.count_nonzero(select)
+            correct = tf.math.count_nonzero(y_label_hat[select] == y[select])
+
+            assert (
+                correct <= total
+            ), f"We have more correct entries than total entries: for color {i} and background {j}"
+
+            digit_accuracy_matrix[i, j] = (correct, total)
     return digit_accuracy_matrix
 
 
@@ -213,38 +236,23 @@ def _compute_overall_statistics(
         tf.math.count_nonzero(y_label_hat[:, im] == y) / n_total for im in range(2)
     ]
 
-    return html.Div(
-        [
-            html.H5("Overall statistics"),
-            html.Div(
-                [
-                    html.H6("Ensemble"),
-                    html.P(f"Accuracy: {ensemble_accuracy * 100:.2f}%"),
-                    dcc.Graph(
-                        figure=pretty_print_matrix(
-                            make_confusion_matrix(X, y, y_biased, ensemble_y_label_hat)
-                        )
-                    ),
-                ]
+    return {
+        "ensemble": {
+            "accuracy": ensemble_accuracy,
+            "confusion_matrix": make_confusion_matrix(
+                X, y, y_biased, ensemble_y_label_hat
             ),
-            *[
-                html.Div(
-                    [
-                        html.H6(f"Model {im}"),
-                        html.P(f"Accuracy: {model_accuracy[im] * 100:.2f}%"),
-                        dcc.Graph(
-                            figure=pretty_print_matrix(
-                                make_confusion_matrix(
-                                    X, y, y_biased, tf.argmax(y_hat[:, im], axis=-1)
-                                )
-                            )
-                        ),
-                    ]
-                )
-                for im in range(2)
-            ],
-        ]
-    )
+        },
+        **{
+            f"model {im}": {
+                "accuracy": model_accuracy[im],
+                "confusion_matrix": make_confusion_matrix(
+                    X, y, y_biased, tf.argmax(y_hat[:, im], axis=-1)
+                ),
+            }
+            for im in range(2)
+        },
+    }
 
 
 def _compute_disagreement_statistics(
@@ -267,31 +275,19 @@ def _compute_disagreement_statistics(
     model_accuracy = [
         tf.math.count_nonzero(y_label_hat[:, im] == y) / n_select for im in range(2)
     ]
-
-    return html.Div(
-        [
-            html.H5("On disagreement"),
-            html.P(
-                f"Total % of data: {n_select} / {n_original} ({n_select / n_original * 100:.2f}%)"
-            ),
-            *[
-                html.Div(
-                    [
-                        html.H6(f"Model {im}"),
-                        html.P(f"Accuracy: {model_accuracy[im] * 100:.2f}%"),
-                        dcc.Graph(
-                            figure=pretty_print_matrix(
-                                make_confusion_matrix(
-                                    X, y, y_biased, y_label_hat[:, im]
-                                )
-                            )
-                        ),
-                    ]
-                )
-                for im in range(2)
-            ],
-        ]
-    )
+    return {
+        "n_select": n_select,
+        "n_original": n_original,
+        **{
+            f"model {im}": {
+                "accuracy": model_accuracy[im],
+                "confusion_matrix": make_confusion_matrix(
+                    X, y, y_biased, y_label_hat[:, im]
+                ),
+            }
+            for im in range(2)
+        },
+    }
 
 
 def _compute_agreement_statistics(
@@ -309,41 +305,89 @@ def _compute_agreement_statistics(
     y_label_hat = y_label_hat[select][:, 0]
 
     acc = tf.math.count_nonzero(y_label_hat == y) / n_select
-    return html.Div(
+
+    return {
+        "n_select": n_select,
+        "n_original": n_original,
+        "accuracy": acc,
+        "confusion_matrix": make_confusion_matrix(X, y, y_biased, y_label_hat),
+    }
+
+
+def compute_statistics(
+    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+):
+    args = (X, y, y_biased, y_hat)
+    return {
+        "overall": _compute_overall_statistics(*args),
+        "disagreement": _compute_disagreement_statistics(*args),
+        "agreement": _compute_agreement_statistics(*args),
+    }
+
+
+def format_statistics(stats: Dict):
+    def format_per_model_statistics(stat_dict: Dict, model_names: List[str]):
+        per_model = []
+        for k in model_names:
+            per_model.append(
+                html.Div(
+                    [
+                        html.H6(k.capitalize()),
+                        html.P(f"Accuracy: {stat_dict[k]['accuracy'] * 100:.2f}%"),
+                        dcc.Graph(
+                            figure=pretty_print_matrix(stat_dict[k]["confusion_matrix"])
+                        ),
+                    ]
+                )
+            )
+        return per_model
+
+    overall = stats["overall"]
+    overall_printed = html.Div(
+        [
+            html.H5("Overall statistics"),
+            *format_per_model_statistics(overall, ["ensemble", "model 0", "model 1"]),
+        ]
+    )
+
+    dis = stats["disagreement"]
+    n_select, n_original = dis["n_select"], dis["n_original"]
+    disagreement_printed = html.Div(
+        [
+            html.H5("On disagreement"),
+            html.P(
+                f"Total % of data: {n_select} / {n_original} "
+                f"({n_select / n_original * 100:.2f}%)"
+            ),
+            *format_per_model_statistics(dis, ["model 0", "model 1"]),
+        ]
+    )
+
+    agr = stats["agreement"]
+    n_select, n_original = agr["n_select"], agr["n_original"]
+    agreement_printed = html.Div(
         [
             html.H5("On agreement"),
             html.P(
-                f"Total % of data: {n_select} / {n_original} ({n_select / n_original * 100:.2f}%)"
+                f"Total % of data: {n_select} / {n_original} "
+                f"({n_select / n_original * 100:.2f}%)"
             ),
-            html.P(f"Accuracy: {acc * 100:.2f}%"),
+            html.P(f"Accuracy: {agr['accuracy'] * 100:.2f}%"),
             html.Div(
                 [
                     html.H6(f"Overall confusion matrix"),
-                    dcc.Graph(
-                        figure=pretty_print_matrix(
-                            make_confusion_matrix(X, y, y_biased, y_label_hat)
-                        )
-                    ),
+                    dcc.Graph(figure=pretty_print_matrix(agr["confusion_matrix"])),
                 ]
             ),
         ]
     )
-
-
-def print_statistics(
-    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
-):
-    overall_statistics = _compute_overall_statistics(X, y, y_biased, y_hat)
-    disagreement_statistics = _compute_disagreement_statistics(X, y, y_biased, y_hat)
-    agreement_statistics = _compute_agreement_statistics(X, y, y_biased, y_hat)
-
-    return [overall_statistics, disagreement_statistics, agreement_statistics]
+    return [overall_printed, disagreement_printed, agreement_printed]
 
 
 def process_dataset(
     dataset: tf.data.Dataset,
     models: List[tf.keras.Model],
-    batch_size: int,
+    batch_size: int = 1024,
     include_div_losses: bool = False,
     kernel: str = "unbiased_hsic",
 ) -> tf.Tensor:
@@ -379,3 +423,116 @@ def process_dataset(
     else:
         return Xs, true_labels, biased_labels, predicted
 
+
+def add_statistics_to_df(df: pd.DataFrame):
+    def process_row(row: pd.DataFrame):
+        tf.keras.backend.clear_session()
+        gin.parse_config_file(row["gin_config_file"])
+
+        models = []
+        for p in row["model_paths"]:
+            m = tf.keras.models.load_model(p, compile=False)
+            models.append(m)
+
+        problem = lib_biased_mnist.BiasedMnistProblem()
+
+        return {
+            "ood_statistics": compute_statistics(
+                *process_dataset(
+                    problem.generate_ood_testing_data(include_bias=True), models
+                )
+            ),
+            "id_statistics": compute_statistics(
+                *process_dataset(
+                    problem.generate_ood_testing_data(include_bias=True), models
+                )
+            ),
+        }
+
+    statistics_per_row = df.progress_apply(process_row, axis=1)
+
+    # Rearrange the errors to be per-column, because this is the format that
+    # pandas requires.
+    keys = statistics_per_row[0].keys()
+    d = {k: [] for k in keys}
+    for g in statistics_per_row:
+        for k in keys:
+            d[k].append(g[k])
+
+    df = pd.concat([df, pd.DataFrame(d)], axis=1)
+    return df
+
+
+def add_generalization_error_column(df: pd.DataFrame) -> pd.DataFrame:
+    def process_row(row: pd.DataFrame):
+        tf.keras.backend.clear_session()
+        gin.parse_config_file(row["gin_config_file"])
+
+        models = []
+        for p in row["model_paths"]:
+            m = tf.keras.models.load_model(p, compile=False)
+            models.append(m)
+
+        problem = lib_biased_mnist.BiasedMnistProblem()
+
+        batch_size = 1024
+        oo_X, oo_y, oo_y_biased, oo_y_hat = process_dataset(
+            problem.generate_testing_data(include_bias=True), models, batch_size
+        )
+
+        ret = {}
+        per_network = sorted(
+            [
+                model_generalization_error(
+                    oo_X, oo_y, oo_y_biased, tf.math.argmax(oo_y_hat, axis=-1)[:, im]
+                )
+                for im in range(2)
+            ]
+        )
+        for im in range(2):
+            ret[f"network_{im}_generalization_error"] = per_network[im]
+
+        ret["ensemble_generalization_error"] = model_generalization_error(
+            oo_X,
+            oo_y,
+            oo_y_biased,
+            tf.math.argmax(tf.math.reduce_mean(oo_y_hat, axis=1), axis=-1),
+        )
+        return ret
+
+    generalization_error_per_row = df.progress_apply(
+        lambda row: process_row(row), axis=1
+    )
+
+    # Rearrange the errors to be per-column, because this is the format that
+    # pandas requires.
+    keys = generalization_error_per_row[0].keys()
+    d = {k: [] for k in keys}
+    for g in generalization_error_per_row:
+        for k in keys:
+            d[k].append(g[k])
+
+    df = pd.concat([df, pd.DataFrame(d)], axis=1)
+    return df
+
+
+
+def expand_generalization_column_to_rows(df: pd.DataFrame):
+    def process_row(row: pd.DataFrame):
+        df = []
+        for col in ["network_0", "network_1", "ensemble"]:
+            row_name = f"{col}_generalization_error"
+            d = row[row_name]
+            r = row.copy()
+            r["generalization_error"] = d
+            r["generalization_error_model"] = col
+            df.append(r)
+        df = pd.DataFrame(df)
+        for col in ["network_0", "network_1", "ensemble"]:
+            row_name = f"{col}_generalization_error"
+            df = df.drop(row_name, axis=1)
+        return df
+
+    return pd.concat(list(df.progress_apply(process_row, axis=1))).reset_index(
+        drop=True
+    )

@@ -328,6 +328,9 @@ class BiasedMnistProblem(lib_problem.Problem):
         )
 
     def generate_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
+        return self.generate_ood_testing_data(include_bias)
+
+    def generate_ood_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
         if include_bias:
             to_select = 3
         else:
@@ -336,6 +339,19 @@ class BiasedMnistProblem(lib_problem.Problem):
             self.filter_tensors(
                 *get_biased_mnist_data(
                     "~/.datasets/mnist/", 0.1, train=False, background_noise_level=0,
+                )
+            )[:to_select]
+        ).cache()
+
+    def generate_id_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
+        if include_bias:
+            to_select = 3
+        else:
+            to_select = 2
+        return tf.data.Dataset.from_tensor_slices(
+            self.filter_tensors(
+                *get_biased_mnist_data(
+                    "~/.datasets/mnist/", 1.0, train=False, background_noise_level=0,
                 )
             )[:to_select]
         ).cache()
@@ -355,4 +371,3 @@ def regenerate_all_data(
                 force_regenerate=True,
                 background_noise_level=bg_noise,
             )
-

@@ -36,17 +36,13 @@ def make_biased_mnist_runs(
     )
 
     ret = []
-    r_0 = -1
-    already_ran = True
-    while already_ran:
-        r_0 += 1
-        already_ran = (root / f"run_{r_0}" / "results.json").exists()
 
-    for r in range(r_0, runs):
+    for r in range(runs):
         d = root / f"run_{r}"
         os.makedirs(d, exist_ok=True)
 
-        assert not (d / "results.json").exists()
+        if (d / "results.json").exists():
+            continue
 
         gin_config = d / "config.gin"
         gin_config.write_text(
@@ -104,9 +100,9 @@ def generate_biased_mnist_configs() -> List[Path]:
     runs = 3
 
     ret = []
-    for initial_lr in [1e0, 1e-1, 1e-2, 1e-3, 1e-4]:
+    for initial_lr in [0.0001, 0.001]:
         for noise_level in NOISE_LEVELS:
-            for indep in ["conditional_hsic", "cka"]:
+            for indep in ["conditional_hsic"]:
                 for k in kernels:
                     for l in lambdas:
                         for corr in LABEL_CORRELATIONS:
