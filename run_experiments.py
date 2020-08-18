@@ -10,7 +10,7 @@ from typing import List
 from tqdm import tqdm
 import lib_biased_mnist
 
-LABEL_CORRELATIONS = [0.999, 0.997, 0.995, 0.99, 0.9]
+LABEL_CORRELATIONS = [0.999, 0.99, 0.9]
 NOISE_LEVELS = [0]
 
 
@@ -23,9 +23,11 @@ def make_biased_mnist_runs(
     runs: int,
     noise_level: int,
     initial_lr: float,
+    n_digits: int,
 ) -> List[Path]:
     root = (
         Path(f"biased_mnist/")
+        / f"{n_digits}_digits"
         / f"{indep}"
         / f"{model}"
         / f"label_correlation_{corr}"
@@ -51,7 +53,7 @@ diversity_loss.independence_measure = '{indep}'
 diversity_loss.kernel = '{k}'
 compute_combined_loss.diversity_loss_coefficient = {l}
 BiasedMnistProblem.training_data_label_correlation = {corr}
-BiasedMnistProblem.filter_for_digits = {list(range(10))}
+BiasedMnistProblem.filter_for_digits = {list(range(n_digits))}
 BiasedMnistProblem.model_type = 'mlp'
 BiasedMnistProblem.background_noise_level = {noise_level}
 Problem.n_epochs = 100
@@ -100,9 +102,9 @@ def generate_biased_mnist_configs() -> List[Path]:
     runs = 3
 
     ret = []
-    for initial_lr in [0.0001, 0.001]:
+    for initial_lr in [0.0001, 0.001, 0.01]:
         for noise_level in NOISE_LEVELS:
-            for indep in ["conditional_hsic"]:
+            for indep in ["conditional_cka"]:
                 for k in kernels:
                     for l in lambdas:
                         for corr in LABEL_CORRELATIONS:
@@ -117,6 +119,7 @@ def generate_biased_mnist_configs() -> List[Path]:
                                         runs,
                                         noise_level,
                                         initial_lr,
+                                        n_digits=10,
                                     )
                                 )
     return ret

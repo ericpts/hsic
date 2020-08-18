@@ -265,7 +265,7 @@ def _compute_disagreement_statistics(
     n_select = tf.math.count_nonzero(select)
 
     if n_select == 0:
-        return html.H5("No disagreement")
+        return {}
 
     X = X[select]
     y = y[select]
@@ -334,9 +334,9 @@ def format_statistics(stats: Dict):
                     [
                         html.H6(k.capitalize()),
                         html.P(f"Accuracy: {stat_dict[k]['accuracy'] * 100:.2f}%"),
-                        dcc.Graph(
-                            figure=pretty_print_matrix(stat_dict[k]["confusion_matrix"])
-                        ),
+                        # dcc.Graph(
+                        #     figure=pretty_print_matrix(stat_dict[k]["confusion_matrix"])
+                        # ),
                     ]
                 )
             )
@@ -351,6 +351,9 @@ def format_statistics(stats: Dict):
     )
 
     dis = stats["disagreement"]
+    if not dis or type(dis) != type({}):
+        return html.H5("No disagreement")
+
     n_select, n_original = dis["n_select"], dis["n_original"]
     disagreement_printed = html.Div(
         [
@@ -373,12 +376,12 @@ def format_statistics(stats: Dict):
                 f"({n_select / n_original * 100:.2f}%)"
             ),
             html.P(f"Accuracy: {agr['accuracy'] * 100:.2f}%"),
-            html.Div(
-                [
-                    html.H6(f"Overall confusion matrix"),
-                    dcc.Graph(figure=pretty_print_matrix(agr["confusion_matrix"])),
-                ]
-            ),
+            # html.Div(
+            #     [
+            #         html.H6(f"Overall confusion matrix"),
+            #         dcc.Graph(figure=pretty_print_matrix(agr["confusion_matrix"])),
+            #     ]
+            # ),
         ]
     )
     return [overall_printed, disagreement_printed, agreement_printed]
@@ -424,6 +427,19 @@ def process_dataset(
         return Xs, true_labels, biased_labels, predicted
 
 
+def add_columns_to_df(df: pd.DataFrame, columns: Dict):
+    # Rearrange the errors to be per-column, because this is the format that
+    # pandas requires.
+    keys = columns.iloc[0].keys()
+    d = {k: [] for k in keys}
+    for g in columns:
+        for k in keys:
+            d[k].append(g[k])
+
+    df = pd.concat([df.reset_index(drop=True), pd.DataFrame(d)], axis=1)
+    return df
+
+
 def add_statistics_to_df(df: pd.DataFrame):
     def process_row(row: pd.DataFrame):
         tf.keras.backend.clear_session()
@@ -444,23 +460,13 @@ def add_statistics_to_df(df: pd.DataFrame):
             ),
             "id_statistics": compute_statistics(
                 *process_dataset(
-                    problem.generate_ood_testing_data(include_bias=True), models
+                    problem.generate_id_testing_data(include_bias=True), models
                 )
             ),
         }
 
     statistics_per_row = df.progress_apply(process_row, axis=1)
-
-    # Rearrange the errors to be per-column, because this is the format that
-    # pandas requires.
-    keys = statistics_per_row[0].keys()
-    d = {k: [] for k in keys}
-    for g in statistics_per_row:
-        for k in keys:
-            d[k].append(g[k])
-
-    df = pd.concat([df, pd.DataFrame(d)], axis=1)
-    return df
+    return add_columns_to_df(df, statistics_per_row)
 
 
 def add_generalization_error_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -514,7 +520,6 @@ def add_generalization_error_column(df: pd.DataFrame) -> pd.DataFrame:
 
     df = pd.concat([df, pd.DataFrame(d)], axis=1)
     return df
-
 
 
 def expand_generalization_column_to_rows(df: pd.DataFrame):
