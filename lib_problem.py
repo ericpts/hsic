@@ -362,13 +362,27 @@ class Problem(object):
     def on_epoch_end(self, epoch: int):
         print(f"Epoch: {epoch + 1}")
 
+        with self.train_summary_writer.as_default():
+            for ms in self.metrics:
+                for m in ms:
+                    if not m.name.startswith("train"):
+                        continue
+                    tf.summary.scalar(m.name, m.result(), step=epoch)
+
+        with self.test_summary_writer.as_default():
+            for ms in self.metrics:
+                for m in ms:
+                    if not m.name.startswith("test"):
+                        continue
+                    tf.summary.scalar(m.name, m.result(), step=epoch)
+
         for ms in self.metrics:
             res = [m.result().numpy() for m in ms]
             metric_name = ms[0].name
             if len(res) == 1:
                 res = res[0]
             print(f"\t{metric_name}: {res}")
-        print(f"Took {time.time() - self.epoch_start_time} seconds.")
+        print(f"Took {time.time() - self.epoch_start_time:.2f} seconds.")
         print("=" * 100)
 
         if (
@@ -385,13 +399,13 @@ class Problem(object):
         for epoch in range(self.n_epochs):
             self.on_epoch_start(epoch)
 
-            for (X, y) in D_test.batch(self.batch_size).prefetch(4):
-                test_loss = self.test_step(X, y)
-                self.test_combined_loss(test_loss)
-
-            for (X, y) in D_train.batch(self.batch_size).prefetch(4):
+            for (X, y) in D_train.batch(self.batch_size):
                 train_loss = self.train_step(X, y)
                 self.train_combined_loss(train_loss)
+
+            for (X, y) in D_test.batch(self.batch_size):
+                test_loss = self.test_step(X, y)
+                self.test_combined_loss(test_loss)
 
             self.on_epoch_end(epoch)
 

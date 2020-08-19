@@ -121,19 +121,22 @@ class ColourBiasedMNIST(MNIST):
         fg_data[data == 0] = 0
         fg_data = torch.stack([fg_data, fg_data, fg_data], dim=-1)
 
-        bg_data = torch.zeros_like(data)
-        bg_data[data == 0] = 1
-        bg_data[data != 0] = 0
-        bg_data = torch.stack([bg_data, bg_data, bg_data], dim=3)
-        bg_data = bg_data * torch.ByteTensor(colour)
-
         noise = torch.randint(
             -self.background_noise_level,
             self.background_noise_level + 1,
-            bg_data.size(),
+            (data.shape[0], 3),
         )
-        noise[data != 0] = 0
-        bg_data = torch.clamp(bg_data + noise, 0, 255).type(fg_data.dtype)
+        noisy_colour = torch.clamp(
+            noise + np.asarray(colour)[np.newaxis, :], 0, 255
+        ).type(fg_data.dtype)
+
+        bg_data = torch.zeros_like(data)
+        bg_data[data == 0] = 1
+        bg_data[data != 0] = 0
+
+        bg_data = torch.stack([bg_data, bg_data, bg_data], dim=3)
+        bg_data = bg_data * torch.ByteTensor(noisy_colour[:, np.newaxis, np.newaxis, :])
+
         data = fg_data + bg_data
         return data
 
@@ -338,7 +341,10 @@ class BiasedMnistProblem(lib_problem.Problem):
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
                 *get_biased_mnist_data(
-                    "~/.datasets/mnist/", 0.1, train=False, background_noise_level=0,
+                    "~/.datasets/mnist/",
+                    0.1,
+                    train=False,
+                    background_noise_level=self.background_noise_level,
                 )
             )[:to_select]
         ).cache()
@@ -351,7 +357,10 @@ class BiasedMnistProblem(lib_problem.Problem):
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
                 *get_biased_mnist_data(
-                    "~/.datasets/mnist/", 1.0, train=False, background_noise_level=0,
+                    "~/.datasets/mnist/",
+                    1.0,
+                    train=False,
+                    background_noise_level=self.background_noise_level,
                 )
             )[:to_select]
         ).cache()

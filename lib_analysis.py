@@ -465,8 +465,32 @@ def add_statistics_to_df(df: pd.DataFrame):
             ),
         }
 
+    def f_extract_disagreement_per_row(row: Dict) -> pd.Series:
+        ood_dis = row["ood_statistics"]["disagreement"]
+        ood_disagreement_rate = ood_dis["n_select"].numpy() / ood_dis["n_original"]
+
+        id_dis = row["id_statistics"]["disagreement"]
+        if "n_select" not in id_dis:
+            id_disagreement_rate = 0.0
+        else:
+            id_disagreement_rate = id_dis["n_select"].numpy() / id_dis["n_original"]
+
+        return {
+            "ood_disagreement_rate": ood_disagreement_rate,
+            "id_disagreement_rate": id_disagreement_rate,
+        }
+
     statistics_per_row = df.progress_apply(process_row, axis=1)
-    return add_columns_to_df(df, statistics_per_row)
+    df = add_columns_to_df(df, statistics_per_row)
+
+    df = add_columns_to_df(
+        df,
+        df[["id_statistics", "ood_statistics"]].apply(
+            f_extract_disagreement_per_row, axis=1
+        ),
+    )
+
+    return df
 
 
 def add_generalization_error_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -541,3 +565,12 @@ def expand_generalization_column_to_rows(df: pd.DataFrame):
     return pd.concat(list(df.progress_apply(process_row, axis=1))).reset_index(
         drop=True
     )
+
+
+def add_column_from_statistics(
+    df: pd.DataFrame, f_per_row: Callable[[Dict], Dict]
+) -> pd.DataFrame:
+    return add_columns_to_df(
+        df, df[["id_statistics", "ood_statistics"]].apply(f_per_row, axis=1)
+    )
+
