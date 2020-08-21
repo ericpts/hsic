@@ -244,30 +244,6 @@ def get_weight_regularizer(strength: float = 0.01):
     return tf.keras.regularizers.l2(strength)
 
 
-def make_base_cnn_model(n_classes: int) -> tf.keras.Model:
-    inputs = tf.keras.layers.Input((28, 28, 3))
-
-    X = inputs
-    X = tf.keras.layers.Conv2D(4, kernel_size=3)(X)
-    X = tf.keras.layers.ReLU()(X)
-    X = tf.keras.layers.BatchNormalization()(X)
-
-    X = tf.keras.layers.Conv2D(8, kernel_size=3)(X)
-    X = tf.keras.layers.ReLU()(X)
-    X = tf.keras.layers.BatchNormalization()(X)
-
-    X = tf.keras.layers.Conv2D(16, kernel_size=3)(X)
-    X = tf.keras.layers.ReLU()(X)
-    X = tf.keras.layers.BatchNormalization()(X)
-
-    X = tf.keras.layers.GlobalAveragePooling2D()(X)
-
-    feature_extractor = X
-
-    X = tf.keras.layers.Dense(n_classes)(X)
-    return tf.keras.Model(inputs, outputs=[feature_extractor, X])
-
-
 def make_base_mlp_model(n_classes: int) -> tf.keras.Model:
     reg = get_weight_regularizer()
     inputs = tf.keras.layers.Input((28, 28, 3))
@@ -292,8 +268,6 @@ class BiasedMnistProblem(lib_problem.Problem):
     ) -> None:
         if model_type == "mlp":
             make_base_model = lambda: make_base_mlp_model(len(filter_for_digits))
-        elif model_type == "cnn":
-            make_base_model = lambda: make_base_cnn_model(len(filter_for_digits))
         else:
             raise ValueError(f"Unknown model_type: {model_type}!")
         super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)

@@ -11,6 +11,7 @@ import json
 from typing import List, Tuple, Dict
 import lib_toy
 import lib_biased_mnist
+import lib_celeb_a
 
 
 def main(config: Dict, gin_overrides: List[str]):
@@ -28,6 +29,8 @@ def main(config: Dict, gin_overrides: List[str]):
         problem = lib_toy.ToyProblem()
     elif config["problem"] == "biased_mnist":
         problem = lib_biased_mnist.BiasedMnistProblem()
+    elif config["problem"] == "celeb_a":
+        problem = lib_celeb_a.CelebAProblem()
     else:
         raise ValueError(f'Unexpected problem: {config["problem"]}')
 

@@ -399,13 +399,13 @@ class Problem(object):
         for epoch in range(self.n_epochs):
             self.on_epoch_start(epoch)
 
-            for (X, y) in D_train.batch(self.batch_size):
-                train_loss = self.train_step(X, y)
-                self.train_combined_loss(train_loss)
-
             for (X, y) in D_test.batch(self.batch_size):
                 test_loss = self.test_step(X, y)
                 self.test_combined_loss(test_loss)
+
+            for (X, y) in D_train.batch(self.batch_size):
+                train_loss = self.train_step(X, y)
+                self.train_combined_loss(train_loss)
 
             self.on_epoch_end(epoch)
 
