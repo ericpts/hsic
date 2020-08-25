@@ -1,0 +1,9 @@
+diversity_loss.kernel = 'rbf'
+diversity_loss.independence_measure = 'cka'
+compute_combined_loss.diversity_loss_coefficient = 1
+
+Problem.initial_lr = 0.0001
+Problem.n_epochs = 100
+Problem.n_models = 2
+Problem.decrease_lr_at_epochs = [20, 40, 80]
+get_weight_regularizer.strength = 0.01

@@ -14,26 +14,25 @@ import lib_biased_mnist
 import lib_celeb_a
 
 
+PROBLEM_DICT = {
+    "toy": lib_toy.ToyProblem,
+    "biased_mnist": lib_biased_mnist.BiasedMnistProblem,
+    "celeb_a": lib_celeb_a.CelebAProblem,
+}
+
+
 def main(config: Dict, gin_overrides: List[str]):
+    tf.profiler.experimental.server.start(6009)
+
     assert "gin_config_file" in config
     assert "results_json_output" in config
     assert "problem" in config
-    assert config["problem"] in [
-        "toy",
-        "biased_mnist",
-    ], f'Expected problem to be one of toy or biased_mnist; found {config["problem"]}'
+    assert config["problem"] in list(
+        PROBLEM_DICT.keys()
+    ), f'Expected problem to be one of {list(PROBLEM_DICT.keys())}; found {config["problem"]}'
 
     gin.parse_config_files_and_bindings([config["gin_config_file"]], gin_overrides)
-
-    if config["problem"] == "toy":
-        problem = lib_toy.ToyProblem()
-    elif config["problem"] == "biased_mnist":
-        problem = lib_biased_mnist.BiasedMnistProblem()
-    elif config["problem"] == "celeb_a":
-        problem = lib_celeb_a.CelebAProblem()
-    else:
-        raise ValueError(f'Unexpected problem: {config["problem"]}')
-
+    problem = PROBLEM_DICT[config["problem"]]()
     results, models = problem.train()
     return results, models
 

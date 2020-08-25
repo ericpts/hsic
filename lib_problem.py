@@ -221,7 +221,10 @@ def forward(X: tf.Tensor, y_true: tf.Tensor, models: List[tf.keras.Model]) -> tf
 def compute_combined_loss(
     prediction_loss: tf.Tensor, div_loss: tf.Tensor, diversity_loss_coefficient: float,
 ) -> tf.Tensor:
-    return diversity_loss_coefficient * div_loss + tf.reduce_sum(prediction_loss)
+    loss = tf.reduce_sum(prediction_loss)
+    if div_loss != 0.0:
+        loss += diversity_loss_coefficient * div_loss
+    return loss
 
 
 @gin.configurable
@@ -396,14 +399,33 @@ class Problem(object):
         D_train = self.generate_training_data()
         D_test = self.generate_testing_data()
 
+        n_train = 0
+        for X, y in D_train:
+            n_train += 1
+
+        n_test = 0
+        for X, y in D_test:
+            n_test += 1
+
+        print(f"We have {n_train} training samples, and {n_test} testing samples.")
+
+        D_train = (
+            D_train.shuffle(200_000)
+            .batch(self.batch_size)
+            .prefetch(tf.data.experimental.AUTOTUNE)
+        )
+
+        D_test = D_test.batch(self.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+        print("Starting training...")
         for epoch in range(self.n_epochs):
             self.on_epoch_start(epoch)
 
-            for (X, y) in D_test.batch(self.batch_size):
+            for (X, y) in D_test:
                 test_loss = self.test_step(X, y)
                 self.test_combined_loss(test_loss)
 
-            for (X, y) in D_train.batch(self.batch_size):
+            for (X, y) in D_train:
                 train_loss = self.train_step(X, y)
                 self.train_combined_loss(train_loss)
 
