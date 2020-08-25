@@ -40,7 +40,7 @@ def _parse_gin_config(config: str) -> Dict[str, Any]:
     for line in lines:
         tokens = [t.strip() for t in line.split("=")]
         tokens = [t for t in tokens if t]
-        if len(tokens) == 0:
+        if len(tokens) == 0 or tokens[0].startswith("#"):
             continue
         assert len(tokens) == 2, f"Got unexpected line: {tokens}"
         key, value = tokens

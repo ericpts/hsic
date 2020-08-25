@@ -14,13 +14,12 @@ def make_resnet50_model():
     base_resnet = tf.keras.applications.ResNet50(
         include_top=False, weights="imagenet", pooling="avg"
     )
-    inputs = tf.keras.layers.Input((*IMAGE_SIZE, 3))
+    inputs = tf.keras.layers.Input((*IMAGE_SIZE, 3), name="picture")
     X = inputs
     X = base_resnet(X)
     features = tf.keras.layers.Dense(
         100, kernel_regularizer=tf.keras.regularizers.l2(0.0001)
     )(X)
-
     X = features
     X = tf.keras.layers.Dense(2, kernel_regularizer=tf.keras.regularizers.l2(0.0001))(X)
     return tf.keras.Model(inputs, outputs=[features, X])

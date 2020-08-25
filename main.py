@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -12,6 +13,8 @@ from typing import List, Tuple, Dict
 import lib_toy
 import lib_biased_mnist
 import lib_celeb_a
+import lib_analysis
+import mlflow
 
 
 PROBLEM_DICT = {
@@ -22,7 +25,7 @@ PROBLEM_DICT = {
 
 
 def main(config: Dict, gin_overrides: List[str]):
-    tf.profiler.experimental.server.start(6009)
+    server = tf.profiler.experimental.server.start(6009)
 
     assert "gin_config_file" in config
     assert "results_json_output" in config
@@ -33,8 +36,25 @@ def main(config: Dict, gin_overrides: List[str]):
 
     gin.parse_config_files_and_bindings([config["gin_config_file"]], gin_overrides)
     problem = PROBLEM_DICT[config["problem"]]()
-    results, models = problem.train()
-    return results, models
+
+    if "MLFLOW_REMOTE_SERVER" in os.environ:
+        print("Using remote MLFlow server")
+        assert "MLFLOW_USERNAME" in os.environ, "Please provide mlflow username"
+        assert "MLFLOW_PASSWORD" in os.environ, "Please provide mlflow password"
+
+        mlflow_server = os.environ["MLFLOW_REMOTE_SERVER"]
+        mlflow_username = os.environ["MLFLOW_USERNAME"]
+        mlflow_password = os.environ["MLFLOW_PASSWORD"]
+
+        mlflow.set_tracking_uri(
+            f"https://{mlflow_username}:{mlflow_password}@{mlflow_server}"
+        )
+
+    with mlflow.start_run():
+        results, models = problem.train()
+        mlflow.log_params(lib_analysis._parse_gin_config(gin.operative_config_str()))
+        mlflow.log_params(config)
+        return results, models
 
 
 def cli_main():

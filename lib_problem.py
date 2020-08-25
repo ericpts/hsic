@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 from typing import List, Tuple, Dict, Callable
 import time
+import mlflow
 
 
 def center_matrix(M):
@@ -363,28 +364,43 @@ class Problem(object):
         self.epoch_start_time = time.time()
 
     def on_epoch_end(self, epoch: int):
+        def log_metrics_to_tensorboard():
+            with self.train_summary_writer.as_default():
+                for ms in self.metrics:
+                    for m in ms:
+                        if not m.name.startswith("train"):
+                            continue
+                        tf.summary.scalar(m.name, m.result(), step=epoch)
+
+            with self.test_summary_writer.as_default():
+                for ms in self.metrics:
+                    for m in ms:
+                        if not m.name.startswith("test"):
+                            continue
+                        tf.summary.scalar(m.name, m.result(), step=epoch)
+
+        def log_metrics_to_console():
+            for ms in self.metrics:
+                res = [m.result().numpy() for m in ms]
+                metric_name = ms[0].name
+                if len(res) == 1:
+                    res = res[0]
+                print(f"\t{metric_name}: {res}")
+
+        def log_metrics_to_mlflow():
+            for ms in self.metrics:
+                if len(ms) == 1:
+                    m = ms[0]
+                    mlflow.log_metric(m.name, m.result().numpy(), step=epoch)
+                    continue
+
+                for im, m in enumerate(ms):
+                    mlflow.log_metric(f"{m.name}_{im}", m.result().numpy(), step=epoch)
+
+        log_metrics_to_tensorboard()
+        log_metrics_to_mlflow()
         print(f"Epoch: {epoch + 1}")
-
-        with self.train_summary_writer.as_default():
-            for ms in self.metrics:
-                for m in ms:
-                    if not m.name.startswith("train"):
-                        continue
-                    tf.summary.scalar(m.name, m.result(), step=epoch)
-
-        with self.test_summary_writer.as_default():
-            for ms in self.metrics:
-                for m in ms:
-                    if not m.name.startswith("test"):
-                        continue
-                    tf.summary.scalar(m.name, m.result(), step=epoch)
-
-        for ms in self.metrics:
-            res = [m.result().numpy() for m in ms]
-            metric_name = ms[0].name
-            if len(res) == 1:
-                res = res[0]
-            print(f"\t{metric_name}: {res}")
+        log_metrics_to_console()
         print(f"Took {time.time() - self.epoch_start_time:.2f} seconds.")
         print("=" * 100)
 
@@ -421,13 +437,19 @@ class Problem(object):
         for epoch in range(self.n_epochs):
             self.on_epoch_start(epoch)
 
-            for (X, y) in D_test:
+            for (X, y) in D_test.take(5):
                 test_loss = self.test_step(X, y)
                 self.test_combined_loss(test_loss)
 
-            for (X, y) in D_train:
+            if epoch > 2:
+                tf.profiler.experimental.start("logs")
+
+            for (X, y) in D_train.take(5):
                 train_loss = self.train_step(X, y)
                 self.train_combined_loss(train_loss)
+
+            if epoch > 2:
+                tf.profiler.experimental.stop()
 
             self.on_epoch_end(epoch)
 
