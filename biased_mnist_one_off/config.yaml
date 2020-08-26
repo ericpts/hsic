@@ -1,4 +1,0 @@
-gin_config_file: biased_mnist_one_off/config.gin
-results_json_output: biased_mnist_one_off/results.json
-models_output_dir: biased_mnist_one_off/
-problem: biased_mnist

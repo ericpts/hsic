@@ -1,13 +1,7 @@
-from collections import defaultdict
-import string
 from pathlib import Path
 from plotly.colors import n_colors
-from plotly.subplots import make_subplots
 from typing import Dict, Any, Callable
-from typing import List, Optional
-import argparse
-import concurrent.futures
-import dash_core_components as dcc
+from typing import List
 import dash_html_components as html
 import gin
 import json
@@ -15,14 +9,9 @@ import json
 import lib_problem
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import pandas as pd
 import plotly.graph_objects as go
-import seaborn as sns
-import shutil
-import subprocess
 import tensorflow as tf
-import tensorflow_probability as tfp
 import yaml
 import lib_biased_mnist
 
@@ -44,7 +33,10 @@ def _parse_gin_config(config: str) -> Dict[str, Any]:
             continue
         assert len(tokens) == 2, f"Got unexpected line: {tokens}"
         key, value = tokens
-        ret[key] = eval(value)
+        if value.startswith("@"):  # Special gin syntax
+            ret[key] = value
+        else:
+            ret[key] = eval(value)
     return ret
 
 

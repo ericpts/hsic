@@ -1,0 +1,12 @@
+diversity_loss.kernel = 'rbf'
+diversity_loss.independence_measure = 'cka'
+compute_combined_loss.diversity_loss_coefficient = 0
+
+Problem.initial_lr = 0.0001
+Problem.n_epochs = 50
+Problem.n_models = 2
+Problem.decrease_lr_at_epochs = []
+Problem.optimizer=@tf.keras.optimizers.SGD
+
+tf.keras.optimizers.SGD.momentum = 0.9
+get_weight_regularizer.strength = 0.0001

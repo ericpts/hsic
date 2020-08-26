@@ -7,23 +7,14 @@ Courtesy of
 https://github.com/clovaai/rebias/blob/master/datasets/colour_mnist.py
 """
 import os
-from PIL import Image
 import torch
-from torch.utils import data
-from torchvision import transforms
 from torchvision.datasets import MNIST
 import numpy as np
-import matplotlib.pyplot as plt
 import tensorflow as tf
-import tensorflow_probability as tfp
 import gin
 import gin.tf
-import argparse
-import yaml
-from datetime import datetime
 from pathlib import Path
-import json
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 import lib_problem
 
 
@@ -239,13 +230,8 @@ def get_biased_mnist_data(
     return (npz["img"], npz["labels"], npz["biased_labels"])
 
 
-@gin.configurable
-def get_weight_regularizer(strength: float = 0.01):
-    return tf.keras.regularizers.l2(strength)
-
-
 def make_base_mlp_model(n_classes: int) -> tf.keras.Model:
-    reg = get_weight_regularizer()
+    reg = lib_problem.get_weight_regularizer()
     inputs = tf.keras.layers.Input((28, 28, 3))
     X = inputs
     X = tf.keras.layers.Flatten()(X)
@@ -303,9 +289,6 @@ class BiasedMnistProblem(lib_problem.Problem):
             .cache()
             .shuffle(60_000)
         )
-
-    def generate_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
-        return self.generate_ood_testing_data(include_bias)
 
     def generate_ood_testing_data(self, include_bias: bool = False) -> tf.data.Dataset:
         if include_bias:

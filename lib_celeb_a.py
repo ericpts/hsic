@@ -1,6 +1,4 @@
 from typing import Dict
-import plotly.express as px
-import torchvision.transforms as transforms
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import lib_problem
@@ -18,10 +16,12 @@ def make_resnet50_model():
     X = inputs
     X = base_resnet(X)
     features = tf.keras.layers.Dense(
-        100, kernel_regularizer=tf.keras.regularizers.l2(0.0001)
+        100, kernel_regularizer=lib_problem.get_weight_regularizer()
     )(X)
     X = features
-    X = tf.keras.layers.Dense(2, kernel_regularizer=tf.keras.regularizers.l2(0.0001))(X)
+    X = tf.keras.layers.Dense(
+        2, kernel_regularizer=lib_problem.get_weight_regularizer()
+    )(X)
     return tf.keras.Model(inputs, outputs=[features, X])
 
 
@@ -53,11 +53,10 @@ def filter_for_ood(example: Dict) -> bool:
 def extract_image_and_label(example):
     X = example["image"]
 
-    male = tf.cast(example["attributes"]["Male"], tf.int32)
+    tf.cast(example["attributes"]["Male"], tf.int32)
     hair = tf.cast(example["attributes"]["Blond_Hair"], tf.int32)
 
     y = hair
-    y_biased = male
 
     X = tf.image.convert_image_dtype(X, dtype=tf.float32, saturate=False)
     return (X, y)
@@ -101,7 +100,12 @@ class CelebAProblem(lib_problem.Problem):
             tfds.load("celeb_a", split="train").filter(filter_for_id)
         ).cache()
 
-    def generate_testing_data(self) -> tf.data.Dataset:
+    def generate_id_testing_data(self) -> tf.data.Dataset:
+        return dataset_extract_images(
+            tfds.load("celeb_a", split="test").filter(filter_for_id)
+        ).cache()
+
+    def generate_ood_testing_data(self) -> tf.data.Dataset:
         return dataset_extract_images(
             tfds.load("celeb_a", split="test").filter(filter_for_ood)
         ).cache()

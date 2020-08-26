@@ -2,19 +2,21 @@
 import os
 import concurrent.futures
 import argparse
-import numpy as np
 import subprocess
 import os
 from pathlib import Path
 from typing import List
 from tqdm import tqdm
 import lib_biased_mnist
+import mlflow
+import lib_mlflow
 
-LABEL_CORRELATIONS = [0.999, 0.99, 0.9]
-NOISE_LEVELS = [0]
+LABEL_CORRELATIONS = [1, 0.999]
+NOISE_LEVELS = [0, 50, 100, 150]
 
 
 def make_biased_mnist_runs(
+    experiment_name: str,
     indep: str,
     k: str,
     l: float,
@@ -26,7 +28,9 @@ def make_biased_mnist_runs(
     n_digits: int,
 ) -> List[Path]:
     root = (
-        Path(f"biased_mnist/")
+        Path(os.environ["SCRATCH"])
+        / experiment_name
+        / f"biased_mnist"
         / f"{n_digits}_digits"
         / f"{indep}"
         / f"{model}"
@@ -35,7 +39,7 @@ def make_biased_mnist_runs(
         / f"lambda_{l}"
         / f"noise_{noise_level}"
         / f"initial_lr{initial_lr}"
-    )
+    ).resolve()
 
     ret = []
 
@@ -60,6 +64,8 @@ Problem.n_epochs = 100
 Problem.initial_lr = {initial_lr}
 Problem.decrease_lr_at_epochs = [20, 40, 80]
 Problem.n_models = 2
+Problem.optimizer=@tf.keras.optimizers.Nadam
+tf.keras.optimizers.Nadam.epsilon = 0.001
 get_weight_regularizer.strength = 0.01
     """
         )
@@ -73,13 +79,14 @@ gin_config_file: {str(gin_config)}
 results_json_output: {str(results_json)}
 models_output_dir: {str(models_output_dir)}
 problem: biased_mnist
+experiment_name: {experiment_name}
 """
         )
         ret.append(yaml_config)
     return ret
 
 
-def generate_biased_mnist_configs() -> List[Path]:
+def generate_biased_mnist_configs(experiment_name: str) -> List[Path]:
     """ Returns a list of configs to run. """
     lambdas = [
         0,
@@ -102,15 +109,16 @@ def generate_biased_mnist_configs() -> List[Path]:
     runs = 3
 
     ret = []
-    for initial_lr in [0.0001, 0.001, 0.01]:
+    for initial_lr in [0.01]:
         for noise_level in NOISE_LEVELS:
-            for indep in ["conditional_cka"]:
+            for indep in ["conditional_cka", "cka"]:
                 for k in kernels:
                     for l in lambdas:
                         for corr in LABEL_CORRELATIONS:
                             for m in models:
                                 ret.extend(
                                     make_biased_mnist_runs(
+                                        experiment_name,
                                         indep,
                                         k,
                                         l,
@@ -128,9 +136,15 @@ def generate_biased_mnist_configs() -> List[Path]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_processes", type=int, default=16)
+    parser.add_argument("--experiment_name", type=str, required=True)
     args = parser.parse_args()
     lib_biased_mnist.regenerate_all_data(LABEL_CORRELATIONS, NOISE_LEVELS)
-    configs = generate_biased_mnist_configs()
+    configs = generate_biased_mnist_configs(args.experiment_name)
+
+    lib_mlflow.cluster_setup()
+    lib_mlflow.set_remote_eth_server()
+    if not mlflow.get_experiment_by_name(args.experiment_name):
+        mlflow.create_experiment(args.experiment_name)
 
     tasks = []
     print(f"Generated {len(configs)} configs.")
