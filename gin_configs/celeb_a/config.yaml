@@ -1,4 +1,5 @@
-gin_config_file: celeb_a_one_off/config.gin
-results_json_output: celeb_a_one_off/results.json
-models_output_dir: celeb_a_one_off/
+gin_config_file: gin_configs/celeb_a/config.gin
+results_json_output: gin_configs/celeb_a/results.json
+models_output_dir: gin_configs/celeb_a/
 problem: celeb_a
+experiment_name: celeb_a_gender_is_label

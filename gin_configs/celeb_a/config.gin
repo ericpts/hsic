@@ -10,3 +10,6 @@ Problem.optimizer=@tf.keras.optimizers.SGD
 
 tf.keras.optimizers.SGD.momentum = 0.9
 get_weight_regularizer.strength = 0.0001
+Problem.batch_size = 128
+
+extract_image_and_label.label = "gender"

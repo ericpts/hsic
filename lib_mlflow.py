@@ -1,6 +1,7 @@
 import mlflow
 import time
 import subprocess
+import traceback
 
 MLFLOW_SERVER = "exp-02.mlflow-yang.inf.ethz.ch"
 MLFLOW_USERNAME = "exp-02.mlflow-yang.ericst"
@@ -22,8 +23,11 @@ def try_until_success(f):
         try:
             f()
             done = True
-        except IOError as err:
-            print(f"Caugh error when logging: {err}")
+        except (IOError, mlflow.exceptions.MlflowException) as err:
+            print("Caught error when logging to mlflow!")
+            traceback.print_exc()
+            print("Stack trace: ")
+            traceback.print_stack()
             time.sleep(5)
 
 
@@ -37,3 +41,7 @@ def log_params(params):
 
 def log_metric(k, v, step):
     try_until_success(lambda: mlflow.log_metric(k, v, step))
+
+
+def set_tag(k, v):
+    try_until_success(lambda: mlflow.set_tag(k, v))

@@ -36,8 +36,9 @@ def main(config: Dict, gin_overrides: List[str]):
 
     gin_config_string = gin.operative_config_str()
 
-    # Log the whole configuration, so that it is easy to restore it.
-    lib_mlflow.log_param("gin_config_string", gin_config_string)
+    # Include also all the default parameters in the final gin config file.
+    Path(config["gin_config_file"]).write_text(gin_config_string)
+
     lib_mlflow.log_params(lib_analysis._parse_gin_config(gin_config_string))
     lib_mlflow.log_params(config)
     return results, models

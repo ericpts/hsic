@@ -1,5 +1,0 @@
-gin_config_file: gin_configs/celeb_a_like_stanford/config.gin
-results_json_output: gin_configs/celeb_a_like_stanford/results.json
-models_output_dir: gin_configs/celeb_a_like_stanford/
-problem: celeb_a
-experiment_name: celeb_a_stanford_replication

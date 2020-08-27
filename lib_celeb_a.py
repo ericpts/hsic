@@ -50,13 +50,19 @@ def filter_for_ood(example: Dict) -> bool:
     return tf.logical_or(tf.logical_and(blond, male), tf.logical_and(brunette, female))
 
 
-def extract_image_and_label(example):
+@gin.configurable
+def extract_image_and_label(example, label: str = "gender"):
+    assert label in ["hair", "gender"]
+
     X = example["image"]
 
-    tf.cast(example["attributes"]["Male"], tf.int32)
     hair = tf.cast(example["attributes"]["Blond_Hair"], tf.int32)
+    gender = tf.cast(example["attributes"]["Male"], tf.int32)
 
-    y = hair
+    if label == "hair":
+        y = hair
+    else:
+        y = gender
 
     X = tf.image.convert_image_dtype(X, dtype=tf.float32, saturate=False)
     return (X, y)
@@ -109,4 +115,3 @@ class CelebAProblem(lib_problem.Problem):
         return dataset_extract_images(
             tfds.load("celeb_a", split="test").filter(filter_for_ood)
         ).cache()
-
