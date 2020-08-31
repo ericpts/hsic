@@ -4,9 +4,7 @@ import tensorflow as tf
 
 
 def compute_ensemble_distribution(y_hat):
-    m_1, m_2 = y_hat[:, 0, :], y_hat[:, 1, :]
-    y_hat_ensemble = (m_1 + m_2) / 2
-    return y_hat_ensemble
+    return tf.math.reduce_mean(y_hat, axis=1)
 
 
 def pmax(y_hat_ensemble, _y_hat):
@@ -21,8 +19,9 @@ def entropy(y_hat_ensemble, _y_hat):
 
 
 def max_diff(y_hat_ensemble, y_hat):
+    n_models = y_hat.shape[1]
     per_model = []
-    for im in range(2):
+    for im in range(n_models):
         per_model.append(
             tf.math.reduce_max(tf.math.abs(y_hat_ensemble - y_hat[:, im, :]), axis=1)
         )
@@ -31,8 +30,9 @@ def max_diff(y_hat_ensemble, y_hat):
 
 
 def average_diff(y_hat_ensemble, y_hat):
+    n_models = y_hat.shape[1]
     per_model = []
-    for im in range(2):
+    for im in range(n_models):
         per_model.append(
             tf.math.reduce_mean(tf.math.abs(y_hat_ensemble - y_hat[:, im, :]), axis=1)
         )

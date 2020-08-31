@@ -9,55 +9,64 @@ def center_matrix(M):
     return M
 
 
+def dhsic(
+    xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
+) -> tf.Tensor:
+    N = xs[0].shape[0]
+    d = len(xs)
+
+    centered_gram_matrices = [k.matrix(f, f) for f in xs]
+
+    t1 = 1.0
+    t2 = 1.0
+    t3 = 2.0 / N
+
+    for i in range(d):
+        t1 = t1 * centered_gram_matrices[i]
+        t2 = 1 / (N ** 2) * t2 * tf.reduce_sum(centered_gram_matrices[i])
+        t3 = 1 / N * t3 * tf.reduce_sum(centered_gram_matrices[i], axis=1)
+
+    # The original HSIC paper divides by 1 / (N - 1)^2, whereas the d-HSIC
+    # formulation divides by 1 / (N^2).
+    # In order to be consistent with previous work, we modify this d-HSIC to
+    # also normalize by 1 / (N-1)^2
+    biased_original = 1 / (N ** 2) * tf.reduce_sum(t1) + t2 - tf.reduce_sum(t3)
+    biased_like_hsic = biased_original * (N / (N - 1)) ** 2
+    return biased_like_hsic
+
+
 def hsic(
     xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
 ) -> tf.Tensor:
     N = xs[0].shape[0]
-    assert len(xs) == 2
+    n_variables = len(xs)
 
     centered_gram_matrices = [center_matrix(k.matrix(f, f)) for f in xs]
-    return tf.linalg.trace(centered_gram_matrices[0] @ centered_gram_matrices[1]) / (
-        (N - 1) ** 2
-    )
+
+    sums = []
+    for i in range(n_variables):
+        for j in range(i + 1, n_variables):
+            sums.append(
+                tf.linalg.trace(centered_gram_matrices[i] @ centered_gram_matrices[j])
+            )
+    return tf.reduce_mean(sums) / ((N - 1) ** 2)
 
 
-def unbiased_hsic(
-    xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
-) -> tf.Tensor:
-    n = xs[0].shape[0]
+def dcka(xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel):
+    up = dhsic(xs, k)
+    down = 1.0
+
     n_variables = len(xs)
-    assert n_variables == 2
+    for i in range(n_variables):
+        down *= tf.math.pow(1 / dhsic([xs[i], xs[i]], k), 1 / n_variables)
 
-    matrices = [k.matrix(f, f) for f in xs]
-    matrices = [m - tf.linalg.diag_part(m) for m in matrices]
-
-    tK = matrices[0]
-    tL = matrices[1]
-
-    score = (
-        tf.linalg.trace(tK @ tL)
-        + (tf.reduce_sum(tK) * tf.reduce_sum(tL) / (n - 1) / (n - 2))
-        - (
-            2
-            * tf.reduce_sum(tf.reduce_sum(tK, axis=0) * tf.reduce_sum(tL, axis=0))
-            / (n - 2)
-        )
-    )
-    return score / n / (n - 3)
+    return up * down
 
 
 def cka(
     xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
 ) -> tf.Tensor:
     return hsic(xs, k) / tf.math.sqrt(hsic([xs[0], xs[0]], k) * hsic([xs[1], xs[1]], k))
-
-
-def unbiased_cka(
-    xs: List[tf.Tensor], k: tfp.math.psd_kernels.PositiveSemidefiniteKernel
-) -> tf.Tensor:
-    return unbiased_hsic(xs, k) / tf.math.sqrt(
-        tf.math.abs(unbiased_hsic([xs[0], xs[0]], k) * unbiased_hsic([xs[1], xs[1]], k))
-    )
 
 
 def label_kernel(l_0, l_1):
@@ -120,7 +129,7 @@ def manual_chsic(c, s, y, k):
     s1 = 0.0
     for i in range(n):
         for j in range(n):
-            s1 += k(c[i], c[j]) * k(s[i], s[j]) * label_kernel(y[i], y[j])
+            s1 += k.apply(c[i], c[j]) * k.apply(s[i], s[j]) * label_kernel(y[i], y[j])
     s1 /= n
 
     s2 = 0.0
@@ -130,8 +139,8 @@ def manual_chsic(c, s, y, k):
             a2 = 0.0
             for i in C[z]:
                 for ii in C[zz]:
-                    a1 += k(c[i], c[ii])
-                    a2 += k(s[i], s[ii])
+                    a1 += k.apply(c[i], c[ii])
+                    a2 += k.apply(s[i], s[ii])
             a = label_kernel(z, zz) * a1 * a2
             a /= len(C[z]) * len(C[zz])
             s2 += a
@@ -142,10 +151,10 @@ def manual_chsic(c, s, y, k):
         for i in range(n):
             t_0 = 0.0
             for ii in C[z]:
-                t_0 += k(c[i], c[ii])
+                t_0 += k.apply(c[i], c[ii])
             t_1 = 0.0
             for jj in C[z]:
-                t_1 += k(s[i], s[jj])
+                t_1 += k.apply(s[i], s[jj])
             t = t_0 * t_1
             t *= label_kernel(y[i], z)
             t /= len(C[z])
@@ -167,19 +176,14 @@ def diversity_loss(
         raise ValueError(f"Unknown kernel: {kernel}; should be one of linear, rbf")
 
     if independence_measure == "cka":
-        return cka(features, k)
-    if independence_measure == "unbiased_cka":
-        return unbiased_cka(features, k)
+        return dcka(features, k)
     elif independence_measure == "conditional_cka":
         return conditional_cka(features, y, k)
     elif independence_measure == "hsic":
-        return hsic(features, k)
-    elif independence_measure == "unbiased_hsic":
-        return unbiased_hsic(features, k)
+        return dhsic(features, k)
     elif independence_measure == "conditional_hsic":
         return conditional_hsic(features, y, k)
     else:
         raise ValueError(
             f"Unknown independence_measure: {independence_measure}; expected one of cka or hsic"
         )
-

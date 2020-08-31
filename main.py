@@ -88,7 +88,6 @@ def cli_main():
             m.save(str(out))
             model_paths.append(str(out))
         results["model_paths"] = model_paths
-        lib_mlflow.log_param("model_paths", model_paths)
         with open(config["results_json_output"], "w+t") as f:
             json.dump(results, f)
 

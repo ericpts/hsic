@@ -60,7 +60,7 @@ class Problem(object):
         initial_lr: float = 0.001,
         n_epochs: int = 100,
         decrease_lr_at_epochs: List[int] = [20, 40, 80],
-        optimizer=tf.keras.optimizers.Adam,
+        optimizer=tf.keras.optimizers.Nadam,
     ) -> None:
         self.name = name
         self.batch_size = batch_size
