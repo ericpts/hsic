@@ -37,18 +37,34 @@ def main():
     tasks = []
 
     with concurrent.futures.ThreadPoolExecutor(args.n_processes) as exe:
-        for ic, c in enumerate(configs):
-            env = os.environ
-            env["TF_CPP_MIN_LOG_LEVEL"] = "2"
-            if ic % args.n_processes != 0:
-                env["CUDA_VISIBLE_DEVICES"] = ""
-            sp_args = ["python3", "main.py", "--yaml_config_file", str(c)]
-            tasks.append(exe.submit(subprocess.run, sp_args, check=True, env=env,))
-        print("Launched tasks.")
-        for t in tqdm(concurrent.futures.as_completed(tasks)):
-            pass
+        err = None
+        try:
+            for ic, c in enumerate(configs):
+                env = os.environ
+                env["TF_CPP_MIN_LOG_LEVEL"] = "2"
+                if ic % args.n_processes != 0:
+                    env["CUDA_VISIBLE_DEVICES"] = ""
+                sp_args = ["python3", "main.py", "--yaml_config_file", str(c)]
+                tasks.append(exe.submit(subprocess.run, sp_args, check=True, env=env,))
+            print("Launched tasks.")
+            for t in tqdm(concurrent.futures.as_completed(tasks)):
+                pass
+
+        except KeyboardInterrupt as e:
+            print("Stopping due to SIGINT")
+            exe.shutdown(wait=False)
+            err = e
+        except Exception as e:
+            print(f"Got exception from a subprocess; terminating...")
+            exe.shutdown(wait=False)
+            err = e
+
+        if err is not None:
+            raise err
+
     print("Finished all tasks.")
 
 
 if __name__ == "__main__":
     main()
+

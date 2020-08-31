@@ -52,7 +52,7 @@ class ColourBiasedMNIST(MNIST):
         We suggest to researchers considering this benchmark for future researches.
     """
 
-    COLOUR_MAP = [
+    TRAIN_COLOUR_MAP = [
         # 0
         [255, 0, 0],
         [0, 255, 0],
@@ -65,6 +65,21 @@ class ColourBiasedMNIST(MNIST):
         [255, 0, 128],
         [128, 0, 255],
         [128, 128, 128],
+    ]
+
+    TEST_COLOUR_MAP = [
+        # 0
+        [128, 0, 0],
+        [0, 128, 0],
+        [0, 0, 128],
+        [100, 100, 0],
+        [100, 0, 100],
+        # 5
+        [0, 128, 128],
+        [128, 64, 0],
+        [128, 0, 64],
+        [64, 0, 128],
+        [64, 64, 64],
     ]
 
     def __init__(
@@ -80,6 +95,7 @@ class ColourBiasedMNIST(MNIST):
             root, train=train, download=download,
         )
         np.random.seed(0)
+        self.train = train
         self.background_noise_level = background_noise_level
 
         self.data_label_correlation = data_label_correlation
@@ -132,8 +148,12 @@ class ColourBiasedMNIST(MNIST):
         return data
 
     def _make_biased_mnist(self, indices, label):
+        if self.train:
+            colour_map = self.TRAIN_COLOUR_MAP
+        else:
+            colour_map = self.TEST_COLOUR_MAP
         return (
-            self._binary_to_colour(self.data[indices], self.COLOUR_MAP[label]),
+            self._binary_to_colour(self.data[indices], colour_map[label]),
             self.targets[indices],
         )
 

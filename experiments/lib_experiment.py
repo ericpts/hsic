@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-from typing import Dict, List, Optional, Callable
 from pathlib import Path
+from typing import Dict, List, Optional, Callable, Any
 import lib_util
+import os
+
+
+def grid_param(values: List):
+    return values
+
+
+def fixed_param(value: Any) -> List:
+    return [value]
 
 
 class Experiment(object):
@@ -40,16 +49,19 @@ class Experiment(object):
                 if type(v) == type(""):
                     # Special gin type.
                     if v[0] == "@":
-                        output_lines.append(f"{k}: {v}")
+                        output_lines.append(f"{k} = {v}")
                     else:
-                        output_lines.append(f"{k}: '{v}'")
+                        output_lines.append(f"{k} = '{v}'")
                 else:
-                    output_lines.append(f"{k}: {v}")
+                    output_lines.append(f"{k} = {v}")
 
-            root = Path(base_dir)
-            for k in sorted(kwargs.keys()):
+            root = Path(base_dir) / self.name
+            for ik, k in enumerate(sorted(kwargs.keys())):
                 v = kwargs[k]
-                root = root / f"{k}_{v}"
+                if type(v) == type([]):
+                    v = ",".join(map(str, v))
+                    v = f"[{v}]"
+                root = root / f"{ik}_{v}"
             root = root.resolve()
 
             current_configs = []
@@ -79,4 +91,4 @@ experiment_name: {self.name}
             all_configs.extend(current_configs)
 
         lib_util.with_grid_values(self.experiment_dict, once)
-        return configs
+        return all_configs
