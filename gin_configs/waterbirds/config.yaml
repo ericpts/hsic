@@ -1,5 +1,0 @@
-gin_config_file: gin_configs/waterbirds/config.gin
-results_json_output: gin_configs/waterbirds/results.json
-models_output_dir: gin_configs/waterbirds/
-problem: waterbirds
-experiment_name: waterbirds_vanilla

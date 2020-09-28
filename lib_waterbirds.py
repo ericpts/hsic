@@ -9,7 +9,7 @@ import tensorflow as tf
 from PIL import Image
 
 import lib_models
-import lib_problem
+import lib_scenario
 from lib_image import normalize_image
 
 WATERBIRDS_TARBALL_LINK = (
@@ -25,7 +25,7 @@ def transform_image(image: np.ndarray) -> tf.Tensor:
         image
     )
     image = tf.keras.layers.experimental.preprocessing.CenterCrop(
-        (*lib_models.IMAGE_SIZE)
+        (*lib_models.get_image_size())
     )(image)
 
     image = normalize_image(image, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -84,9 +84,8 @@ def load_waterbirds(cache_dir: Path, split: str, include_biased: bool = False):
         return tf.data.Dataset.from_tensor_slices((X, y))
 
 
-class WaterbirdsProblem(lib_problem.Problem):
+class WaterbirdsScenario(lib_scenario.Scenario):
     def __init__(self):
-        super().__init__("waterbirds_problem")
         self.cache_dir = Path(os.environ["SCRATCH"])
 
     def generate_training_data(self) -> tf.data.Dataset:

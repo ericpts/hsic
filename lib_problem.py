@@ -9,6 +9,7 @@ from lib_independence_metrics import diversity_loss
 import lib_mlflow
 import lib_auroc
 import lib_models
+import lib_scenario
 
 
 def label_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -37,24 +38,25 @@ def forward(X: tf.Tensor, y_true: tf.Tensor, models: List[tf.keras.Model]) -> tf
     return (features, ys_pred)
 
 
-@gin.configurable
+@gin.configurable(blacklist=["base_dir"])
 class Problem(object):
     def __init__(
         self,
-        name: str,
+        base_dir: Path,
+        scenario: lib_scenario.Scenario,
         base_model: str,
         lambda_: float,
-        batch_size: int = 256,
-        n_models: int = 2,
-        initial_lr: float = 0.001,
-        n_epochs: int = 100,
-        decrease_lr_at_epochs: List[int] = [20, 40, 80],
-        optimizer=tf.keras.optimizers.Nadam,
+        batch_size: int,
+        n_models: int,
+        initial_lr: float,
+        n_epochs: int,
+        decrease_lr_at_epochs: List[int],
+        optimizer,
     ) -> None:
-        self.name = name
+        self.base_dir = base_dir
         self.batch_size = batch_size
         self.n_models = n_models
-
+        self.scenario = scenario()
         self.lambda_ = lambda_
 
         make_base_model = lib_models.get_make_function(base_model)
@@ -112,9 +114,10 @@ class Problem(object):
             add_auroc_metric(m)
 
     def init_logging(self):
-        self.base_log_dir = Path(
-            f"logs/{self.name}/{datetime.now().strftime('%Y%m%d-%H%M%S')}/"
+        self.base_log_dir = self.base_dir / (
+            f"logs/{datetime.now().strftime('%Y%m%d-%H%M%S')}/"
         )
+
         self.train_log_dir = self.base_log_dir / "train"
         self.train_summary_writer = tf.summary.create_file_writer(
             str(self.train_log_dir)
@@ -167,15 +170,6 @@ class Problem(object):
         assert distribution in ["ood", "id"]
         metric_prefix = f"test_{distribution}"
         return self.forward_step(X, y, metric_prefix)
-
-    def generate_training_data(self):
-        raise NotImplemented("Must implement method in derived class!")
-
-    def generate_id_testing_data(self):
-        raise NotImplemented("Must implement method in derived class!")
-
-    def generate_ood_testing_data(self):
-        raise NotImplemented("Must implement method in derived class!")
 
     def on_epoch_start(self, epoch: int):
         self.reset_metrics()
@@ -232,10 +226,12 @@ class Problem(object):
             self.decrease_lr_at_epochs.pop(0)
 
     def train(self):
-        D_train = self.generate_training_data()
-        D_test_id = self.generate_id_testing_data()
-        D_test_ood = self.generate_ood_testing_data()
+        print("Starting training.")
+        D_train = self.scenario.generate_training_data()
+        D_test_id = self.scenario.generate_id_testing_data()
+        D_test_ood = self.scenario.generate_ood_testing_data()
 
+        print("Counting samples.")
         n_train = 0
         for X, y in D_train:
             n_train += 1
@@ -253,7 +249,7 @@ class Problem(object):
         )
 
         D_train = (
-            D_train.shuffle(200_000)
+            D_train.shuffle(50_000)
             .batch(self.batch_size)
             .prefetch(tf.data.experimental.AUTOTUNE)
         )
@@ -297,5 +293,4 @@ class Problem(object):
             if len(res) == 1:
                 res = res[0]
             results[metric_name] = res
-        results["name"] = self.name
         return results, self.models

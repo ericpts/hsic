@@ -1,0 +1,36 @@
+main.experiment_name = 'biased_mnist'
+
+# Parameters for BiasedMnistProblem:
+# ==============================================================================
+BiasedMnistScenario.background_noise_level = 100
+BiasedMnistScenario.filter_for_digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+BiasedMnistScenario.training_data_label_correlation = 0.9
+
+# Parameters for compute_combined_loss:
+# ==============================================================================
+
+# Parameters for diversity_loss:
+# ==============================================================================
+diversity_loss.independence_measure = 'cka'
+diversity_loss.kernel = 'rbf'
+
+# Parameters for get_weight_regularizer:
+# ==============================================================================
+get_weight_regularizer.strength = 0.01
+
+# Parameters for Problem:
+# ==============================================================================
+Problem.batch_size = 256
+Problem.decrease_lr_at_epochs = [20, 40, 80]
+Problem.initial_lr = 0.01
+Problem.n_epochs = 100
+Problem.n_models = 2
+Problem.optimizer = @tf.keras.optimizers.Nadam
+Problem.lambda_ = 8
+Problem.base_model = 'mlp'
+Problem.scenario = @lib_biased_mnist.BiasedMnistScenario
+tf.keras.optimizers.Nadam.epsilon = 0.001
+
+
+get_image_size.image_size = (28, 28)
+get_n_classes.n_classes = 10

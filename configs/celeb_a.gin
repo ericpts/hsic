@@ -1,15 +1,21 @@
+main.experiment_name = 'celeb_a'
+
 diversity_loss.kernel = 'rbf'
 diversity_loss.independence_measure = 'cka'
 
-Problem.lambda_ = 0
+Problem.batch_size = 128
+Problem.decrease_lr_at_epochs = []
 Problem.initial_lr = 0.0001
+Problem.lambda_ = 0
 Problem.n_epochs = 50
 Problem.n_models = 2
-Problem.decrease_lr_at_epochs = []
 Problem.optimizer=@tf.keras.optimizers.SGD
+Problem.base_model = 'resnet18'
+Problem.scenario = @lib_celeb_a.CelebAScenario
 
 tf.keras.optimizers.SGD.momentum = 0.9
 get_weight_regularizer.strength = 0.0001
-Problem.batch_size = 128
 
 extract_image_and_label.label = "gender"
+
+get_n_classes.n_classes = 2

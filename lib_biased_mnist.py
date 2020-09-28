@@ -16,6 +16,8 @@ import gin.tf
 from pathlib import Path
 from typing import List, Tuple
 import lib_problem
+import lib_scenario
+import lib_models
 
 TESTING_OOD_LABEL_CORRELATION = 0.0
 
@@ -252,40 +254,23 @@ def get_biased_mnist_data(
     return (npz["img"], npz["labels"], npz["biased_labels"])
 
 
-def make_base_mlp_model(n_classes: int) -> tf.keras.Model:
-    reg = lib_problem.get_weight_regularizer()
-    inputs = tf.keras.layers.Input((28, 28, 3))
-    X = inputs
-    X = tf.keras.layers.Flatten()(X)
-    X = tf.keras.layers.Dense(n_classes * 2, kernel_regularizer=reg)(X)
-    feature_extractor = X
-    X = tf.keras.layers.Dense(n_classes, kernel_regularizer=reg)(X)
-    return tf.keras.Model(inputs, outputs=[feature_extractor, X])
-
-
 @gin.configurable
-class BiasedMnistProblem(lib_problem.Problem):
+class BiasedMnistScenario(lib_scenario.Scenario):
     def __init__(
         self,
         training_data_label_correlation: float = 0.99,
         filter_for_digits: List[int] = list(range(10)),
-        model_type: str = "mlp",
         background_noise_level: int = 0,
-        *args,
-        **kwargs,
     ) -> None:
-        if model_type == "mlp":
-            make_base_model = lambda: make_base_mlp_model(len(filter_for_digits))
-        else:
-            raise ValueError(f"Unknown model_type: {model_type}!")
-        super().__init__("biased_mnist_problem", make_base_model, *args, **kwargs)
         self.training_data_label_correlation = training_data_label_correlation
         self.filter_for_digits = tf.convert_to_tensor(filter_for_digits)
         self.background_noise_level = background_noise_level
 
+        self.cache_path = Path(os.environ["SCRATCH"]) / ".datasets" / "mnist"
+
     def filter_tensors(
         self, X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         assert X.shape[0] == y.shape[0]
         assert X.shape[0] == y_biased.shape[0]
         matches_any = [tf.math.equal(y, d) for d in self.filter_for_digits]
@@ -301,7 +286,7 @@ class BiasedMnistProblem(lib_problem.Problem):
             tf.data.Dataset.from_tensor_slices(
                 self.filter_tensors(
                     *get_biased_mnist_data(
-                        "~/.datasets/mnist/",
+                        self.cache_path,
                         self.training_data_label_correlation,
                         train=True,
                         background_noise_level=self.background_noise_level,
@@ -320,7 +305,7 @@ class BiasedMnistProblem(lib_problem.Problem):
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
                 *get_biased_mnist_data(
-                    "~/.datasets/mnist/",
+                    self.cache_path,
                     TESTING_OOD_LABEL_CORRELATION,
                     train=False,
                     background_noise_level=self.background_noise_level,
@@ -336,7 +321,7 @@ class BiasedMnistProblem(lib_problem.Problem):
         return tf.data.Dataset.from_tensor_slices(
             self.filter_tensors(
                 *get_biased_mnist_data(
-                    "~/.datasets/mnist/",
+                    self.cache_path,
                     1.0,
                     train=False,
                     background_noise_level=self.background_noise_level,

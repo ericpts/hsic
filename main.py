@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+import os
 import gin
 import argparse
 import yaml
@@ -12,86 +14,58 @@ import lib_analysis
 import gin.tf.external_configurables
 import lib_mlflow
 import mlflow
+import lib_problem
+import tensorflow as tf
 
 
-PROBLEM_DICT = {
-    "toy": lib_toy.ToyProblem,
-    "biased_mnist": lib_biased_mnist.BiasedMnistProblem,
-    "celeb_a": lib_celeb_a.CelebAProblem,
-    "waterbirds": lib_waterbirds.WaterbirdsProblem,
-}
+@gin.configurable()
+def main(experiment_name: str):
+    print("Using remote MLFlow server")
+    lib_mlflow.set_remote_eth_server()
 
+    print(f"Using experiment name {experiment_name}")
+    mlflow.set_experiment(experiment_name)
 
-def main(config: Dict, gin_overrides: List[str]):
+    with mlflow.start_run() as run:
+        base_dir = Path(os.environ["SCRATCH"]) / experiment_name
+        lib_mlflow.log_param("run_id", run.info.run_id)
+        problem = lib_problem.Problem(base_dir)
 
-    assert "gin_config_file" in config
-    assert "results_json_output" in config
-    assert "problem" in config
-    assert config["problem"] in list(
-        PROBLEM_DICT.keys()
-    ), f'Expected problem to be one of {list(PROBLEM_DICT.keys())}; found {config["problem"]}'
+        results, models = problem.train()
 
-    gin.parse_config_files_and_bindings([config["gin_config_file"]], gin_overrides)
-    problem = PROBLEM_DICT[config["problem"]]()
+        gin_config_string = gin.operative_config_str()
+        lib_mlflow.log_params(lib_analysis._parse_gin_config(gin_config_string))
+        # Include also all the default parameters in the final gin config file.
+        (base_dir / "full_config.gin").write_text(gin_config_string)
 
-    results, models = problem.train()
+        print("Saving models")
+        model_base_save_path = Path(os.environ["SCRATCH"]) / experiment_name / "models"
+        model_base_save_path.mkdir(parents=True, exist_ok=True)
+        for im, m in enumerate(models):
+            out = model_base_save_path / f"model-{im}.h5"
+            m.save_weights(str(out))
+        results["model_base_save_path"] = model_base_save_path
 
-    gin_config_string = gin.operative_config_str()
-
-    # Include also all the default parameters in the final gin config file.
-    Path(config["gin_config_file"]).write_text(gin_config_string)
-
-    lib_mlflow.log_params(lib_analysis._parse_gin_config(gin_config_string))
-    lib_mlflow.log_params(config)
-    return results, models
+    print(results)
 
 
 def cli_main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--yaml_config_file",
+        "--gin_config_file",
         type=str,
-        help="Yaml config file containing all parameters",
+        help="Gin config file containing all parameters",
         required=True,
     )
     parser.add_argument(
-        "--gin_override",
-        type=str,
-        help="Override gin parameters",
-        nargs="*",
-        action="append",
+        "--gin_override", type=str, help="Override gin parameters", action="append"
     )
     args = parser.parse_args()
-    assert Path(args.yaml_config_file).exists
-    config = yaml.load(Path(args.yaml_config_file).read_text(), Loader=yaml.FullLoader)
+    for config_path in args.gin_config_file:
+        assert Path(config_path).exists
 
-    gin_overrides = []
-    if args.gin_override:
-        for opt in args.gin_override:
-            gin_overrides.extend(opt)
-
-    print("Using remote MLFlow server")
-    lib_mlflow.set_remote_eth_server()
-
-    assert "experiment_name" in config
-    experiment_name = config["experiment_name"]
-    print(f"Using experiment name {experiment_name}")
-    mlflow.set_experiment(experiment_name)
-
-    with mlflow.start_run() as run:
-        lib_mlflow.log_param("run_id", run.info.run_id)
-        results, models = main(config, gin_overrides)
-
-        print("Saving models")
-        model_paths = []
-        for im, m in enumerate(models):
-            out = Path(config["models_output_dir"]) / f"model-{im}.h5"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            m.save(str(out))
-            model_paths.append(str(out))
-        results["model_paths"] = model_paths
-        with open(config["results_json_output"], "w+t") as f:
-            json.dump(results, f)
+    gin.parse_config_files_and_bindings([args.gin_config_file], args.gin_override)
+    main()
 
 
 if __name__ == "__main__":
