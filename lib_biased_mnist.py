@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import List, Tuple
 import lib_problem
 
+TESTING_OOD_LABEL_CORRELATION = 0.0
+
 
 class ColourBiasedMNIST(MNIST):
     """
@@ -319,7 +321,7 @@ class BiasedMnistProblem(lib_problem.Problem):
             self.filter_tensors(
                 *get_biased_mnist_data(
                     "~/.datasets/mnist/",
-                    0.1,
+                    TESTING_OOD_LABEL_CORRELATION,
                     train=False,
                     background_noise_level=self.background_noise_level,
                 )
@@ -346,7 +348,10 @@ class BiasedMnistProblem(lib_problem.Problem):
 def regenerate_all_data(
     label_correlations: List[float], background_noise_levels: List[int]
 ):
-    get_biased_mnist_data("~/.datasets/mnist/", 0.1, train=False, force_regenerate=True)
+    for label_corr in [TESTING_OOD_LABEL_CORRELATION, 1.0]:
+        get_biased_mnist_data(
+            "~/.datasets/mnist/", label_corr, train=False, force_regenerate=True,
+        )
 
     for bg_noise in background_noise_levels:
         for label_corr in label_correlations:

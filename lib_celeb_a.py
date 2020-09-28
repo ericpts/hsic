@@ -3,26 +3,8 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import lib_problem
 import gin
-
-# IMAGE_SIZE = (112, 112)
-IMAGE_SIZE = (224, 224)
-
-
-def make_resnet50_model():
-    base_resnet = tf.keras.applications.ResNet50(
-        include_top=False, weights="imagenet", pooling="avg"
-    )
-    inputs = tf.keras.layers.Input((*IMAGE_SIZE, 3), name="picture")
-    X = inputs
-    X = base_resnet(X)
-    features = tf.keras.layers.Dense(
-        100, kernel_regularizer=lib_problem.get_weight_regularizer()
-    )(X)
-    X = features
-    X = tf.keras.layers.Dense(
-        2, kernel_regularizer=lib_problem.get_weight_regularizer()
-    )(X)
-    return tf.keras.Model(inputs, outputs=[features, X])
+from lib_image import normalize_image
+from lib_models import make_resnet50_model, IMAGE_SIZE
 
 
 def filter_dataset(D: tf.data.Dataset, attribute_name: str, target_value):
@@ -66,13 +48,6 @@ def extract_image_and_label(example, label: str = "gender"):
 
     X = tf.image.convert_image_dtype(X, dtype=tf.float32, saturate=False)
     return (X, y)
-
-
-def normalize_image(image: tf.Tensor, mean, stddev):
-    per_channel = []
-    for i, (m, s) in enumerate(zip(mean, stddev)):
-        per_channel.append((image[:, :, :, i] - m) / s)
-    return tf.stack(per_channel, axis=-1)
 
 
 def transform_image(X, y):

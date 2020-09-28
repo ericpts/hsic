@@ -7,6 +7,7 @@ from typing import Dict, List
 import lib_toy
 import lib_biased_mnist
 import lib_celeb_a
+import lib_waterbirds
 import lib_analysis
 import gin.tf.external_configurables
 import lib_mlflow
@@ -17,6 +18,7 @@ PROBLEM_DICT = {
     "toy": lib_toy.ToyProblem,
     "biased_mnist": lib_biased_mnist.BiasedMnistProblem,
     "celeb_a": lib_celeb_a.CelebAProblem,
+    "waterbirds": lib_waterbirds.WaterbirdsProblem,
 }
 
 

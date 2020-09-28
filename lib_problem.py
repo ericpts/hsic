@@ -8,11 +8,7 @@ import time
 from lib_independence_metrics import diversity_loss
 import lib_mlflow
 import lib_auroc
-
-
-@gin.configurable
-def get_weight_regularizer(strength: float = 0.01):
-    return tf.keras.regularizers.l2(strength)
+import lib_models
 
 
 def label_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -27,6 +23,8 @@ def forward(X: tf.Tensor, y_true: tf.Tensor, models: List[tf.keras.Model]) -> tf
     ys_pred = []
     for m in models:
         (f, y_pred) = m(X)
+        tf.debugging.assert_all_finite(f, "features: bad numbers found!")
+        tf.debugging.assert_all_finite(y_pred, "y_pred: bad numbers found!")
 
         features.append(f)
         if y_pred.shape[-1] == 1:
@@ -40,21 +38,12 @@ def forward(X: tf.Tensor, y_true: tf.Tensor, models: List[tf.keras.Model]) -> tf
 
 
 @gin.configurable
-def compute_combined_loss(
-    prediction_loss: tf.Tensor, div_loss: tf.Tensor, diversity_loss_coefficient: float,
-) -> tf.Tensor:
-    loss = tf.reduce_sum(prediction_loss)
-    if div_loss != 0.0:
-        loss += diversity_loss_coefficient * div_loss
-    return loss
-
-
-@gin.configurable
 class Problem(object):
     def __init__(
         self,
         name: str,
-        make_base_model: Callable[[], tf.keras.Model],
+        base_model: str,
+        lambda_: float,
         batch_size: int = 256,
         n_models: int = 2,
         initial_lr: float = 0.001,
@@ -65,6 +54,10 @@ class Problem(object):
         self.name = name
         self.batch_size = batch_size
         self.n_models = n_models
+
+        self.lambda_ = lambda_
+
+        make_base_model = lib_models.get_make_function(base_model)
 
         self.models = [make_base_model() for i in range(self.n_models)]
         self.lr = tf.Variable(initial_lr)
@@ -133,8 +126,13 @@ class Problem(object):
     def forward_step(self, X: tf.Tensor, y: tf.Tensor, metric_prefix: str) -> tf.Tensor:
         (features, ys_pred) = forward(X, y, self.models)
         prediction_loss = [label_loss(y, y_pred) for y_pred in ys_pred]
-        div_loss = diversity_loss(features, y)
-        loss = compute_combined_loss(prediction_loss, div_loss)
+        loss = tf.reduce_sum(prediction_loss)
+        if self.lambda_ != 0.0:
+            div_loss = diversity_loss(features, y)
+            loss += div_loss * self.lambda_
+        else:
+            div_loss = 0.0
+            print("Not using diversity loss!")
 
         for ip, p_loss in enumerate(prediction_loss):
             self.metrics[f"{metric_prefix}_prediction_loss"][ip](p_loss)
