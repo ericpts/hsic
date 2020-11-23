@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import shutil
 import tensorflow as tf
-import tensorflow_addons as tfa
 import os
 import gin
 import argparse
@@ -54,19 +53,19 @@ def main(experiment_name: str):
 def cli_main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--gin_config_file",
+        "--gin_file",
         type=str,
         help="Gin config file containing all parameters",
         required=True,
     )
     parser.add_argument(
-        "--gin_override", type=str, help="Override gin parameters", action="append"
+        "--gin_param", type=str, help="Override gin parameters", action="append"
     )
     args = parser.parse_args()
-    for config_path in args.gin_config_file:
+    for config_path in args.gin_file:
         assert Path(config_path).exists
 
-    gin.parse_config_files_and_bindings([args.gin_config_file], args.gin_override)
+    gin.parse_config_files_and_bindings([args.gin_file], args.gin_param)
 
     main()
 

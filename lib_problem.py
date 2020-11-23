@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_addons as tfa
 import gin
 import gin.tf
 from datetime import datetime

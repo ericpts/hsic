@@ -1,70 +1,57 @@
 #!/usr/bin/env python3
-import os
-import concurrent.futures
 import argparse
-import subprocess
-import os
-from pathlib import Path
-from typing import List
-from tqdm import tqdm
-import lib_biased_mnist
-import mlflow
-import lib_mlflow
-import importlib
-from experiments.lib_experiment import Experiment
+import itertools
+import lib_jobs
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_processes", type=int, default=16)
     parser.add_argument("--experiment", type=str, required=True)
-    parser.add_argument("--base_dir", type=str, required=True)
+    parser.add_argument(
+        "-wp",
+        "--with_param",
+        type=str,
+        action="append",
+        default=[],
+        help="Optional repeated argument of the form k=[v], "
+        "will be included in the cartesian product of parameters, "
+        "using k as the gin parameter name. "
+        "Example usage: --with_param data.batch_size=[32,64,128]",
+    )
     args = parser.parse_args()
 
-    experiment_module = importlib.import_module(f"experiments.{args.experiment}")
-    experiment = experiment_module.experiment  # type: Experiment
-    experiment.on_before_start()
-    configs = experiment.generate_configs(Path(args.base_dir))
-    print(f"Generated {len(configs)} configs.")
+    params = {}
+    for param_string in args.with_param:
+        [k, v] = [s.strip() for s in param_string.split("=")]
+        if not v.startswith("@"):
+            v = eval(v)  # Risky but what you gonna do about it.
 
-    experiment_name = experiment.name
+        if type(v) == type([]):
+            pass
+        else:
+            v = [v]
+        params[k] = v
 
-    lib_mlflow.cluster_setup()
-    lib_mlflow.set_remote_eth_server()
-    if not mlflow.get_experiment_by_name(experiment_name):
-        mlflow.create_experiment(experiment_name)
+    for config in itertools.product(
+        *params.values(),
+    ):
+        (*gin_args_tuple,) = config
+        gin_args = list(zip(params.keys(), gin_args_tuple))
+        gin_args.append(("main.experiment_name", args.experiment))
+        cli_args = [
+            ("gin_file", "configs/biased_mnist.gin"),
+        ]
 
-    tasks = []
-
-    with concurrent.futures.ThreadPoolExecutor(args.n_processes) as exe:
-        err = None
-        try:
-            for ic, c in enumerate(configs):
-                env = os.environ
-                env["TF_CPP_MIN_LOG_LEVEL"] = "2"
-                if ic % args.n_processes != 0:
-                    env["CUDA_VISIBLE_DEVICES"] = ""
-                sp_args = ["python3", "main.py", "--yaml_config_file", str(c)]
-                tasks.append(exe.submit(subprocess.run, sp_args, check=True, env=env,))
-            print("Launched tasks.")
-            for t in tqdm(concurrent.futures.as_completed(tasks)):
-                pass
-
-        except KeyboardInterrupt as e:
-            print("Stopping due to SIGINT")
-            exe.shutdown(wait=False)
-            err = e
-        except Exception as e:
-            print(f"Got exception from a subprocess; terminating...")
-            exe.shutdown(wait=False)
-            err = e
-
-        if err is not None:
-            raise err
-
-    print("Finished all tasks.")
+        lib_jobs.launch_bsub(
+            nhours=1,
+            main_python_file="main.py",
+            cli_args=cli_args,
+            gin_args=gin_args,
+            n_cpus=2,
+            require_gpu=False,
+            job_name=f"log_{args.experiment}",
+        )
 
 
 if __name__ == "__main__":
     main()
-
