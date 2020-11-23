@@ -83,3 +83,9 @@ class CelebAScenario(lib_scenario.Scenario):
         return dataset_extract_images(
             tfds.load("celeb_a", split="test").filter(filter_for_ood)
         ).cache()
+
+    def get_num_classes(self):
+        return 2
+
+    def get_image_size(self):
+        return (224, 224, 3)

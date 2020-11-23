@@ -112,3 +112,9 @@ class WaterbirdsScenario(lib_scenario.Scenario):
             return X, y
 
         return D.filter(filter_for_ood).map(discard_biased).cache()
+
+    def get_num_classes(self):
+        return 2
+
+    def get_image_size(self):
+        return (224, 224, 3)

@@ -1,14 +1,9 @@
+main.experiment_name = 'waterbirds'
+
 diversity_loss.kernel = 'rbf'
 diversity_loss.independence_measure = 'cka'
-
 Problem.lambda_ = 0
-Problem.initial_lr = 0.0001
+
 Problem.n_epochs = 300
 Problem.n_models = 2
-Problem.decrease_lr_at_epochs = []
-Problem.optimizer=@tf.keras.optimizers.SGD
-Problem.batch_size = 128
-Problem.base_model = "vgg16"
-
-tf.keras.optimizers.SGD.momentum = 0.9
-get_weight_regularizer.strength = 0.0001
+Problem.scenario = @lib_waterbirds.WaterbirdsScenario

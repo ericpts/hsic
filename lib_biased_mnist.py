@@ -19,8 +19,6 @@ import lib_problem
 import lib_scenario
 import lib_models
 
-TESTING_OOD_LABEL_CORRELATION = 0.0
-
 
 class ColourBiasedMNIST(MNIST):
     """
@@ -96,7 +94,9 @@ class ColourBiasedMNIST(MNIST):
         background_noise_level=0,
     ):
         super().__init__(
-            root, train=train, download=download,
+            root,
+            train=train,
+            download=download,
         )
         np.random.seed(0)
         self.train = train
@@ -193,8 +193,7 @@ class ColourBiasedMNIST(MNIST):
             bias_indices[_label] = torch.cat([bias_indices[_label], _indices])
 
     def build_biased_mnist(self):
-        """Build biased MNIST.
-        """
+        """Build biased MNIST."""
         n_labels = self.targets.max().item() + 1
 
         bias_indices = {label: torch.LongTensor() for label in range(n_labels)}
@@ -224,34 +223,22 @@ def get_biased_mnist_data(
     data_label_correlation: float,
     train: bool = True,
     n_confusing_labels: int = 9,
-    force_regenerate: bool = False,
     background_noise_level: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-
-    train_ext = "train" if train else "test"
-    fname = (
-        Path(root).expanduser()
-        / f"data_{data_label_correlation}_{n_confusing_labels}_{train_ext}_{background_noise_level}.npz"
+    dataset = ColourBiasedMNIST(
+        root,
+        train=train,
+        download=True,
+        data_label_correlation=data_label_correlation,
+        n_confusing_labels=n_confusing_labels,
+        background_noise_level=background_noise_level,
     )
-
-    if force_regenerate or not fname.exists():
-        dataset = ColourBiasedMNIST(
-            root,
-            train=train,
-            download=True,
-            data_label_correlation=data_label_correlation,
-            n_confusing_labels=n_confusing_labels,
-            background_noise_level=background_noise_level,
-        )
-        img, labels, biased_labels = (
-            dataset.data,
-            dataset.targets,
-            dataset.biased_targets,
-        )
-        np.savez(fname, img=img, labels=labels, biased_labels=biased_labels)
-
-    npz = np.load(fname)
-    return (npz["img"], npz["labels"], npz["biased_labels"])
+    img, labels, biased_labels = (
+        dataset.data,
+        dataset.targets,
+        dataset.biased_targets,
+    )
+    return img, labels, biased_labels
 
 
 @gin.configurable
@@ -263,7 +250,7 @@ class BiasedMnistScenario(lib_scenario.Scenario):
         background_noise_level: int = 0,
     ) -> None:
         self.training_data_label_correlation = training_data_label_correlation
-        self.filter_for_digits = tf.convert_to_tensor(filter_for_digits)
+        self.filter_for_digits = tf.convert_to_tensor(sorted(filter_for_digits))
         self.background_noise_level = background_noise_level
 
         self.cache_path = Path(os.environ["SCRATCH"]) / ".datasets" / "mnist"
@@ -306,7 +293,7 @@ class BiasedMnistScenario(lib_scenario.Scenario):
             self.filter_tensors(
                 *get_biased_mnist_data(
                     self.cache_path,
-                    TESTING_OOD_LABEL_CORRELATION,
+                    0.0,
                     train=False,
                     background_noise_level=self.background_noise_level,
                 )
@@ -329,21 +316,8 @@ class BiasedMnistScenario(lib_scenario.Scenario):
             )[:to_select]
         ).cache()
 
+    def get_num_classes(self):
+        return 10
 
-def regenerate_all_data(
-    label_correlations: List[float], background_noise_levels: List[int]
-):
-    for label_corr in [TESTING_OOD_LABEL_CORRELATION, 1.0]:
-        get_biased_mnist_data(
-            "~/.datasets/mnist/", label_corr, train=False, force_regenerate=True,
-        )
-
-    for bg_noise in background_noise_levels:
-        for label_corr in label_correlations:
-            get_biased_mnist_data(
-                "~/.datasets/mnist/",
-                label_corr,
-                train=True,
-                force_regenerate=True,
-                background_noise_level=bg_noise,
-            )
+    def get_image_size(self):
+        return (28, 28, 3)

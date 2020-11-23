@@ -1,9 +1,10 @@
 import tensorflow as tf
+import tensorflow_addons as tfa
 import gin
 import gin.tf
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List
+from typing import List
 import time
 from lib_independence_metrics import diversity_loss
 import lib_mlflow
@@ -53,7 +54,7 @@ class Problem(object):
         decrease_lr_at_epochs: List[int],
         optimizer,
     ) -> None:
-        self.base_dir = base_dir
+
         self.batch_size = batch_size
         self.n_models = n_models
         self.scenario = scenario()
@@ -61,10 +62,17 @@ class Problem(object):
 
         make_base_model = lib_models.get_make_function(base_model)
 
-        self.models = [make_base_model() for i in range(self.n_models)]
-        self.lr = tf.Variable(initial_lr)
+        self.base_dir = base_dir
 
-        self.optimizer = optimizer(lr=self.lr)
+        self.models = [
+            make_base_model(
+                num_classes=self.scenario.get_num_classes(),
+                image_size=self.scenario.get_image_size(),
+            )
+            for i in range(self.n_models)
+        ]
+        self.lr = tf.Variable(initial_lr)
+        self.optimizer = optimizer(learning_rate=self.lr)
 
         self.decrease_lr_at_epochs = decrease_lr_at_epochs
         self.n_epochs = n_epochs
@@ -211,8 +219,9 @@ class Problem(object):
                         f"{m.name}_{im}", m.result().numpy(), step=epoch
                     )
 
-        log_metrics_to_tensorboard()
-        log_metrics_to_mlflow()
+        # log_metrics_to_tensorboard()
+        if epoch % 10 == 0 or epoch == self.n_epochs:
+            log_metrics_to_mlflow()
         print(f"Epoch: {epoch + 1}")
         log_metrics_to_console()
         print(f"Took {time.time() - self.epoch_start_time:.2f} seconds.")

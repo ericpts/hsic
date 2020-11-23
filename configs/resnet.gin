@@ -1,0 +1,11 @@
+diversity_loss.kernel = 'rbf'
+diversity_loss.independence_measure = 'cka'
+
+Problem.initial_lr = 0.0001
+Problem.decrease_lr_at_epochs = []
+Problem.optimizer=@tf.keras.optimizers.SGD
+Problem.batch_size = 128
+Problem.base_model = "resnet18"
+
+tf.keras.optimizers.SGD.momentum = 0.9
+get_weight_regularizer.strength = 0.0005
