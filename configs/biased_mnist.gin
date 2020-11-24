@@ -6,9 +6,6 @@ BiasedMnistScenario.background_noise_level = 0
 BiasedMnistScenario.filter_for_digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 BiasedMnistScenario.training_data_label_correlation = 0.99
 
-# Parameters for compute_combined_loss:
-# ==============================================================================
-
 # Parameters for diversity_loss:
 # ==============================================================================
 diversity_loss.independence_measure = 'cka'

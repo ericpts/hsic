@@ -14,7 +14,7 @@ import tensorflow as tf
 import gin
 import gin.tf
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union, Literal
 import lib_problem
 import lib_scenario
 import lib_models
@@ -54,7 +54,7 @@ class ColourBiasedMNIST(MNIST):
         We suggest to researchers considering this benchmark for future researches.
     """
 
-    TRAIN_COLOUR_MAP = [
+    ID_COLOR_MAP = [
         # 0
         [255, 0, 0],
         [0, 255, 0],
@@ -69,7 +69,7 @@ class ColourBiasedMNIST(MNIST):
         [128, 128, 128],
     ]
 
-    TEST_COLOUR_MAP = [
+    OOD_COLOR_MAP = [
         # 0
         [128, 0, 0],
         [0, 128, 0],
@@ -87,6 +87,7 @@ class ColourBiasedMNIST(MNIST):
     def __init__(
         self,
         root,
+        color_map: Union[Literal["id"], Literal["ood"]],
         train=True,
         download=False,
         data_label_correlation=1.0,
@@ -99,7 +100,7 @@ class ColourBiasedMNIST(MNIST):
             download=download,
         )
         np.random.seed(0)
-        self.train = train
+        self.color_map = color_map
         self.background_noise_level = background_noise_level
 
         self.data_label_correlation = data_label_correlation
@@ -152,10 +153,11 @@ class ColourBiasedMNIST(MNIST):
         return data
 
     def _make_biased_mnist(self, indices, label):
-        if self.train:
-            colour_map = self.TRAIN_COLOUR_MAP
+        if self.color_map == "id":
+            colour_map = self.ID_COLOR_MAP
         else:
-            colour_map = self.TEST_COLOUR_MAP
+            assert self.color_map == "ood"
+            colour_map = self.OOD_COLOR_MAP
         return (
             self._binary_to_colour(self.data[indices], colour_map[label]),
             self.targets[indices],
@@ -221,12 +223,14 @@ class ColourBiasedMNIST(MNIST):
 def get_biased_mnist_data(
     root: Path,
     data_label_correlation: float,
+    color_map: Union[Literal["id"], Literal["ood"]],
     train: bool = True,
     n_confusing_labels: int = 9,
     background_noise_level: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     dataset = ColourBiasedMNIST(
         root,
+        color_map=color_map,
         train=train,
         download=True,
         data_label_correlation=data_label_correlation,
@@ -275,6 +279,7 @@ class BiasedMnistScenario(lib_scenario.Scenario):
                     *get_biased_mnist_data(
                         self.cache_path,
                         self.training_data_label_correlation,
+                        "id",
                         train=True,
                         background_noise_level=self.background_noise_level,
                     )
@@ -293,7 +298,8 @@ class BiasedMnistScenario(lib_scenario.Scenario):
             self.filter_tensors(
                 *get_biased_mnist_data(
                     self.cache_path,
-                    0.0,
+                    0.1,
+                    "ood",
                     train=False,
                     background_noise_level=self.background_noise_level,
                 )
@@ -309,7 +315,8 @@ class BiasedMnistScenario(lib_scenario.Scenario):
             self.filter_tensors(
                 *get_biased_mnist_data(
                     self.cache_path,
-                    1.0,
+                    self.training_data_label_correlation,
+                    "id",
                     train=False,
                     background_noise_level=self.background_noise_level,
                 )
