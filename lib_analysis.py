@@ -94,7 +94,7 @@ def plot_digit_grid(X: tf.Tensor, y: tf.Tensor, per_digit: int = 10):
             axarr[j, i].imshow(x[indices[j]] * 0.5 + 0.5)
             axarr[j, i].axis("off")
 
-    plt.show()
+    return f
 
 
 def plot_biased_digit_grid(X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor):
@@ -180,7 +180,8 @@ def pretty_print_matrix(matrix: np.ndarray) -> go.Figure:
     )
 
     fig.update_layout(
-        margin=dict(l=20, r=20, t=20, b=0, pad=0), paper_bgcolor="LightSteelBlue",
+        margin=dict(l=20, r=20, t=20, b=0, pad=0),
+        paper_bgcolor="LightSteelBlue",
     )
     fig.update_layout(width=1000, height=150)
     fig.update_yaxes(automargin=True)
@@ -216,7 +217,10 @@ def make_confusion_matrix(
 
 
 def _compute_overall_statistics(
-    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+    X: tf.Tensor,
+    y: tf.Tensor,
+    y_biased: tf.Tensor,
+    y_hat: tf.Tensor,
 ):
     n_total = y.shape[0]
 
@@ -248,7 +252,10 @@ def _compute_overall_statistics(
 
 
 def _compute_disagreement_statistics(
-    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+    X: tf.Tensor,
+    y: tf.Tensor,
+    y_biased: tf.Tensor,
+    y_hat: tf.Tensor,
 ):
     y_label_hat = tf.argmax(y_hat, axis=-1)
 
@@ -283,7 +290,10 @@ def _compute_disagreement_statistics(
 
 
 def _compute_agreement_statistics(
-    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+    X: tf.Tensor,
+    y: tf.Tensor,
+    y_biased: tf.Tensor,
+    y_hat: tf.Tensor,
 ):
     y_label_hat = tf.argmax(y_hat, axis=-1)
 
@@ -307,7 +317,10 @@ def _compute_agreement_statistics(
 
 
 def compute_statistics(
-    X: tf.Tensor, y: tf.Tensor, y_biased: tf.Tensor, y_hat: tf.Tensor,
+    X: tf.Tensor,
+    y: tf.Tensor,
+    y_biased: tf.Tensor,
+    y_hat: tf.Tensor,
 ):
     args = (X, y, y_biased, y_hat)
     return {
@@ -565,4 +578,3 @@ def add_column_from_statistics(
     return add_columns_to_df(
         df, df[["id_statistics", "ood_statistics"]].apply(f_per_row, axis=1)
     )
-
