@@ -4,7 +4,6 @@ import tensorflow_datasets as tfds
 import lib_problem
 import gin
 from lib_image import normalize_image
-from lib_models import get_image_size
 import lib_scenario
 
 
@@ -52,7 +51,7 @@ def transform_image(X, y):
     X = tf.keras.layers.experimental.preprocessing.CenterCrop(
         orig_min_dim, orig_min_dim
     )(X)
-    X = tf.keras.layers.experimental.preprocessing.Resizing(*get_image_size())(X)
+    X = tf.keras.layers.experimental.preprocessing.Resizing(224, 224)(X)
     X = normalize_image(X, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     return X, y
 
@@ -67,7 +66,7 @@ def dataset_extract_images(D: tf.data.Dataset) -> tf.data.Dataset:
 @gin.configurable
 class CelebAScenario(lib_scenario.Scenario):
     def __init__(self):
-        print(f"CelebA: Using picture size of {get_image_size()}")
+        print(f"CelebA: Using picture size of (224, 224)")
 
     def generate_training_data(self) -> tf.data.Dataset:
         return dataset_extract_images(
@@ -87,5 +86,5 @@ class CelebAScenario(lib_scenario.Scenario):
     def get_num_classes(self):
         return 2
 
-    def get_image_size(self):
+    def get_input_size(self):
         return (224, 224, 3)

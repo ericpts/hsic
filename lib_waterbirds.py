@@ -24,9 +24,7 @@ def transform_image(image: np.ndarray) -> tf.Tensor:
     image = tf.keras.layers.experimental.preprocessing.Resizing((*initial_resolution))(
         image
     )
-    image = tf.keras.layers.experimental.preprocessing.CenterCrop(
-        (*lib_models.get_image_size())
-    )(image)
+    image = tf.keras.layers.experimental.preprocessing.CenterCrop(224, 224)(image)
 
     image = normalize_image(image, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     return image
@@ -116,5 +114,5 @@ class WaterbirdsScenario(lib_scenario.Scenario):
     def get_num_classes(self):
         return 2
 
-    def get_image_size(self):
+    def get_input_size(self):
         return (224, 224, 3)

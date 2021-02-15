@@ -10,6 +10,7 @@ import gin.tf.external_configurables
 import lib_mlflow
 import mlflow
 import lib_problem
+import lib_toy
 
 
 @gin.configurable()
@@ -24,7 +25,7 @@ def main(experiment_name: str):
 
     run_id = run.info.run_id
     lib_mlflow.log_param("run_id", run.info.run_id)
-    base_dir = Path(os.environ["SCRATCH"]) / experiment_name / run_id
+    base_dir = Path(os.environ.get("SCRATCH", "./")) / experiment_name / run_id
     problem = lib_problem.Problem(base_dir=base_dir)
     results, models = problem.train()
 

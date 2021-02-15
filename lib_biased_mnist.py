@@ -15,9 +15,7 @@ import gin
 import gin.tf
 from pathlib import Path
 from typing import List, Tuple, Union, Literal
-import lib_problem
 import lib_scenario
-import lib_models
 
 
 class ColourBiasedMNIST(MNIST):
@@ -326,5 +324,5 @@ class BiasedMnistScenario(lib_scenario.Scenario):
     def get_num_classes(self):
         return 10
 
-    def get_image_size(self):
+    def get_input_size(self):
         return (28, 28, 3)

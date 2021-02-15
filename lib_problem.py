@@ -10,6 +10,7 @@ import lib_mlflow
 import lib_auroc
 import lib_models
 import lib_scenario
+from typing import Callable
 
 
 def label_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -43,7 +44,7 @@ class Problem(object):
     def __init__(
         self,
         base_dir: Path,
-        scenario: lib_scenario.Scenario,
+        scenario: Callable[[], lib_scenario.Scenario],
         base_model: str,
         lambda_: float,
         batch_size: int,
@@ -66,9 +67,9 @@ class Problem(object):
         self.models = [
             make_base_model(
                 num_classes=self.scenario.get_num_classes(),
-                image_size=self.scenario.get_image_size(),
+                input_size=self.scenario.get_input_size(),
             )
-            for i in range(self.n_models)
+            for _ in range(self.n_models)
         ]
         self.lr = tf.Variable(initial_lr)
         self.optimizer = optimizer(learning_rate=self.lr)

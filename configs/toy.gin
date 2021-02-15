@@ -1,0 +1,14 @@
+main.experiment_name = 'toy'
+
+diversity_loss.kernel = 'linear'
+diversity_loss.independence_measure = 'cka'
+Problem.lambda_ = 1
+
+Problem.n_epochs = 60
+Problem.n_models = 2
+Problem.scenario = @lib_toy.ToyScenario
+Problem.base_model = "toy"
+Problem.initial_lr = 0.01
+Problem.decrease_lr_at_epochs = []
+Problem.optimizer=@tf.keras.optimizers.Adam
+Problem.batch_size = 256
